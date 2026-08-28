@@ -31,8 +31,21 @@ body {
 .tabbar {
   display: flex;
   align-items: center;
+  /* Traffic lights overlay this bar's left edge; keep tabs clear of them. */
+  padding-left: var(--traffic-lights-w);
   background: var(--bg-chrome);
   border-bottom: 1px solid var(--border);
+}
+
+/* Empty areas of the tab bar drag the window, standing in for the title bar
+   that Overlay mode removes. Interactive children opt out via .no-drag. */
+.tabbar-drag {
+  flex: 1;
+  align-self: stretch;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
 }
 
 .left-panel {

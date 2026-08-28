@@ -7,7 +7,11 @@
    is the only edit needed once exact specs land.
    --------------------------------------------------------------- */
 :root {
-  --tabbar-h: 34px;
+  --tabbar-h: 40px;
+  /* Left inset reserved for the macOS traffic lights, which now overlay the
+     tab bar instead of sitting in a separate native title bar above it.
+     Must stay in sync with trafficLightPosition in tauri.conf.json. */
+  --traffic-lights-w: 88px;
   --leftpanel-w: 240px;
   --toolbar-w: 40px;
   --rightpanel-w: 277px;
