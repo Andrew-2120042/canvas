@@ -25,3 +25,6 @@ dist-ssr
 
 # Scratch
 *.local
+
+# MCP sidecar deps
+mcp-server/node_modules

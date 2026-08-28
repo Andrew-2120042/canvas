@@ -1,0 +1,16 @@
+{
+  "name": "canvas-mcp-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local MCP server exposing the canvas to the user's own coding agent.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ws": "^8.21.3",
+    "zod": "^4.5.1"
+  }
+}

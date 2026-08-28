@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDoc } from "./document/store";
 import { loadSaved, startAutosave } from "./document/persist";
+import { startMcp, stopMcp } from "./mcp/bridge";
 import { TabBar } from "./shell/TabBar";
 import { LeftPanel } from "./shell/LeftPanel";
 import { Toolbar } from "./shell/Toolbar";
@@ -24,6 +25,19 @@ export default function App() {
     });
     return () => stop?.();
   }, []);
+
+  // The MCP server runs while a file is open, not as an always-on service.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    void startMcp()
+      .then((port) => { if (!cancelled) console.info(`[mcp] serving on port ${port}`); })
+      .catch((e) => console.warn("[mcp] could not start:", e));
+    return () => {
+      cancelled = true;
+      void stopMcp().catch(() => {});
+    };
+  }, [ready]);
 
   if (!ready) return <div className="shell" />;
 

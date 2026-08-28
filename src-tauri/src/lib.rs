@@ -1,4 +1,8 @@
+mod mcp;
+
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use mcp::McpState;
+use tauri::Manager;
 
 /// Read a user-picked image and hand it back as a data URL.
 ///
@@ -34,12 +38,24 @@ fn read_image_data_url(path: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(McpState::default())
         .plugin(tauri_plugin_opener::init())
         // Local document persistence writes into the app data directory.
         .plugin(tauri_plugin_fs::init())
         // Native file picker: WKWebView does not open HTML file inputs.
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![read_image_data_url])
+        .invoke_handler(tauri::generate_handler![
+            read_image_data_url,
+            mcp::start_mcp_server,
+            mcp::stop_mcp_server,
+            mcp::mcp_port,
+        ])
+        .on_window_event(|window, event| {
+            // The sidecar is a child of this app, not a background service.
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                window.state::<McpState>().shutdown();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
