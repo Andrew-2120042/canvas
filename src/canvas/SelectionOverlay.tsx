@@ -29,6 +29,9 @@ export function SelectionOverlay() {
   return (
     <div className="selection-overlay">
       {selection.map((id) => {
+        // A hidden node stays selected so it can be brought back, but drawing
+        // its box would outline empty space.
+        if (!doc.nodes[id]?.visible) return null;
         const r = worldRect(doc, id);
         if (!r) return null;
         const left = r.x * zoom + x;

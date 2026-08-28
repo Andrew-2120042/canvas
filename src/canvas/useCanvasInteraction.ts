@@ -1,5 +1,7 @@
 import { useEffect, useState, type RefObject } from "react";
-import { frameAt, parentOrigin, useDoc, type Rect } from "../document/store";
+import {
+  collectWorldRects, frameAt, parentOrigin, rectsIntersect, useDoc, type Rect,
+} from "../document/store";
 import { useTool } from "../state/tools";
 import { useViewport } from "../state/viewport";
 import type { HandleKey } from "./SelectionOverlay";
@@ -55,6 +57,7 @@ export function useCanvasInteraction(
   spaceHeld: boolean,
 ) {
   const [draft, setDraft] = useState<Rect | null>(null);
+  const [marquee, setMarquee] = useState<Rect | null>(null);
 
   useEffect(() => {
     const el = ref.current;
@@ -138,7 +141,26 @@ export function useCanvasInteraction(
       if (tool === "move") {
         const nodeEl = target.closest("[data-node-id]") as HTMLElement | null;
         if (!nodeEl) {
-          doc.clearSelection();
+          // Empty canvas: rubber-band select. Additive with shift held, so an
+          // existing selection can be extended rather than replaced.
+          const base = e.shiftKey ? doc.selection : [];
+          if (!e.shiftKey) doc.clearSelection();
+          e.preventDefault();
+          setMarquee({ x: start.x, y: start.y, width: 0, height: 0 });
+          drag(
+            e,
+            (w) => {
+              const box = normalise(start.x, start.y, w.x, w.y);
+              setMarquee(box);
+              const st = useDoc.getState();
+              const page = st.doc.pages[st.currentPageId];
+              const hits = collectWorldRects(st.doc, page.children)
+                .filter((n) => n.visible && !n.locked && rectsIntersect(box, n))
+                .map((n) => n.id);
+              st.select([...new Set([...base, ...hits])]);
+            },
+            () => setMarquee(null),
+          );
           return;
         }
         const id = nodeEl.dataset.nodeId!;
@@ -219,5 +241,5 @@ export function useCanvasInteraction(
     };
   }, [ref, spaceHeld]);
 
-  return { draft };
+  return { draft, marquee };
 }

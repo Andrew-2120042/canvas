@@ -50,10 +50,149 @@ body {
 }
 
 .left-panel {
+  display: flex;
+  flex-direction: column;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   min-height: 0;
   overflow-y: auto;
+}
+
+/* Sizes below come from docs/reference/measurements.md, taken off the
+   reference UI at 2x. */
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.panel-title-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  height: 24px;
+  margin: 12px;
+  padding: 2px;
+  background: var(--bg-track);
+  border-radius: 5px;
+  flex: 0 0 auto;
+}
+
+.segmented button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: default;
+}
+
+.segmented button.is-active {
+  background: var(--bg-row-selected);
+  color: var(--text);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  height: var(--row-h);
+  padding-right: 8px;
+  flex: 0 0 auto;
+}
+
+.section-title {
+  flex: 1;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.section-chevron,
+.section-action,
+.layer-chevron,
+.layer-toggle {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--icon);
+  cursor: default;
+}
+
+.layer-chevron.is-empty { visibility: hidden; }
+
+.panel-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--border);
+  flex: 0 0 auto;
+}
+
+.layer-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.page-row,
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--row-h);
+  padding-right: 6px;
+  color: var(--text);
+  cursor: default;
+}
+
+.page-row { padding-left: 8px; }
+
+.layer-row:hover,
+.page-row:hover { background: var(--bg-row-hover); }
+
+.layer-row.is-selected,
+.page-row.is-selected { background: var(--bg-row-selected); }
+
+.layer-icon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  color: var(--icon);
+  flex: 0 0 auto;
+}
+
+.layer-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Lock and eye appear on hover, or stay put when the state is non-default. */
+.layer-toggle { opacity: 0; flex: 0 0 auto; }
+.layer-row:hover .layer-toggle { opacity: 1; }
+.layer-toggle.is-on { opacity: 1; color: var(--text); }
+
+.theme-empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.theme-empty-title {
+  margin-bottom: 6px;
+  color: var(--text);
 }
 
 .right-panel {
@@ -179,4 +318,11 @@ body {
   min-height: 1em;
   cursor: text;
   white-space: pre-wrap;
+}
+
+.marquee {
+  position: absolute;
+  border: 1px solid #2B7FFF;
+  background: rgba(43, 127, 255, 0.10);
+  pointer-events: none;
 }

@@ -14,7 +14,7 @@ import { SelectionOverlay } from "../canvas/SelectionOverlay";
 export function CanvasRegion() {
   const ref = useRef<HTMLElement>(null);
   const { spaceHeld, dragging } = useViewportControls(ref);
-  const { draft } = useCanvasInteraction(ref, spaceHeld);
+  const { draft, marquee } = useCanvasInteraction(ref, spaceHeld);
 
   const { x, y, zoom } = useViewport();
   const tool = useTool((s) => s.tool);
@@ -56,6 +56,19 @@ export function CanvasRegion() {
         {page.children.map((id) => (
           <SceneNodeView key={id} id={id} />
         ))}
+
+        {marquee && (
+          <div
+            className="marquee"
+            style={{
+              left: marquee.x,
+              top: marquee.y,
+              width: marquee.width,
+              height: marquee.height,
+              borderWidth: 1 / zoom,
+            }}
+          />
+        )}
 
         {draft && (
           <div

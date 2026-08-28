@@ -212,3 +212,40 @@ export function parentOrigin(doc: Doc, id: NodeId | null): { x: number; y: numbe
   }
   return { x, y };
 }
+
+export interface PlacedNode extends Rect {
+  id: NodeId;
+  locked: boolean;
+  visible: boolean;
+}
+
+/** Every node on a page with its absolute world rect, front-most last. */
+export function collectWorldRects(
+  doc: Doc,
+  ids: NodeId[],
+  ox = 0,
+  oy = 0,
+  out: PlacedNode[] = [],
+): PlacedNode[] {
+  for (const id of ids) {
+    const n = doc.nodes[id];
+    if (!n) continue;
+    const x = ox + n.x;
+    const y = oy + n.y;
+    out.push({
+      id, x, y, width: n.width, height: n.height,
+      locked: n.locked, visible: n.visible,
+    });
+    if (n.children.length) collectWorldRects(doc, n.children, x, y, out);
+  }
+  return out;
+}
+
+export function rectsIntersect(a: Rect, b: Rect): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
