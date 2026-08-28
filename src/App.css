@@ -165,3 +165,18 @@ body {
 .selection-handle[data-handle="ne"], .selection-handle[data-handle="sw"] { cursor: nesw-resize; }
 .selection-handle[data-handle="n"],  .selection-handle[data-handle="s"]  { cursor: ns-resize; }
 .selection-handle[data-handle="e"],  .selection-handle[data-handle="w"]  { cursor: ew-resize; }
+
+/* Text nodes carry glyphs, not a fill; the box itself stays transparent. */
+.scene-node--text {
+  font-family: var(--font-ui);
+  line-height: 1.3;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.text-editor {
+  outline: none;
+  min-height: 1em;
+  cursor: text;
+  white-space: pre-wrap;
+}

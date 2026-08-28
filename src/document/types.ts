@@ -43,6 +43,7 @@ export interface SceneNode {
 
   /** Text nodes only. */
   text?: string;
+  fontSize?: number;
 }
 
 export interface Page {
@@ -81,9 +82,11 @@ export function createNode(
     ...rect,
     visible: true,
     locked: false,
-    fill: type === "frame" ? "#FFFFFF" : "#D9D9D9",
+    // For text, `fill` is the glyph colour and the box stays transparent.
+    fill: type === "frame" ? "#FFFFFF" : type === "text" ? "#222222" : "#D9D9D9",
     opacity: 1,
     radius: 0,
+    ...(type === "text" ? { text: "Text", fontSize: 16 } : {}),
     ...overrides,
   };
 }

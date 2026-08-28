@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
-import { useDoc, type Rect } from "../document/store";
+import { frameAt, parentOrigin, useDoc, type Rect } from "../document/store";
 import { useTool } from "../state/tools";
 import { useViewport } from "../state/viewport";
 import type { HandleKey } from "./SelectionOverlay";
@@ -7,7 +7,11 @@ import type { HandleKey } from "./SelectionOverlay";
 const MIN_SIZE = 1;
 /** Below this drag distance a frame-tool press counts as a click. */
 const CLICK_SLOP = 3;
-const DEFAULT_FRAME = { width: 400, height: 300 };
+const DEFAULT_SIZE: Record<string, { width: number; height: number }> = {
+  frame: { width: 400, height: 300 },
+  rect: { width: 120, height: 120 },
+  text: { width: 160, height: 24 },
+};
 
 function normalise(ax: number, ay: number, bx: number, by: number): Rect {
   return {
@@ -67,6 +71,9 @@ export function useCanvasInteraction(
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 || spaceHeld) return;
+      // This native listener runs before React's synthetic handlers, so the
+      // editor cannot stop it from starting a drag — bail out here instead.
+      if ((e.target as HTMLElement).closest(".text-editor")) return;
 
       const tool = useTool.getState().tool;
       const doc = useDoc.getState();
@@ -93,7 +100,7 @@ export function useCanvasInteraction(
       }
 
       // --- create ----------------------------------------------------------
-      if (tool === "frame" || tool === "rect") {
+      if (tool === "frame" || tool === "rect" || tool === "text") {
         e.preventDefault();
         setDraft({ x: start.x, y: start.y, width: 0, height: 0 });
         drag(
@@ -104,11 +111,24 @@ export function useCanvasInteraction(
             let rect = normalise(start.x, start.y, w.x, w.y);
             if (rect.width < CLICK_SLOP && rect.height < CLICK_SLOP) {
               // A plain click drops a default-sized node at the cursor.
-              rect = { x: start.x, y: start.y, ...DEFAULT_FRAME };
+              rect = { x: start.x, y: start.y, ...DEFAULT_SIZE[tool] };
             }
-            const id = useDoc.getState().addNode(tool, rect);
+
+            // Drop into whichever frame the press landed in. A frame dragged
+            // out over another frame still nests — matching how the DOM would
+            // read the result.
+            const st = useDoc.getState();
+            const page = st.doc.pages[st.currentPageId];
+            const parent = frameAt(st.doc, page.children, start.x, start.y);
+            if (parent) {
+              const o = parentOrigin(st.doc, parent);
+              rect = { ...rect, x: rect.x - o.x, y: rect.y - o.y };
+            }
+
+            const id = st.addNode(tool, rect, parent);
             useDoc.getState().select([id]);
             useTool.getState().setTool("move");
+            if (tool === "text") useDoc.getState().setEditing(id);
           },
         );
         return;
@@ -177,8 +197,26 @@ export function useCanvasInteraction(
       elm.addEventListener("pointercancel", up);
     }
 
+    /** Double-click a text node to edit it in place. */
+    const onDoubleClick = (e: MouseEvent) => {
+      const nodeEl = (e.target as HTMLElement).closest(
+        "[data-node-id]",
+      ) as HTMLElement | null;
+      if (!nodeEl) return;
+      const id = nodeEl.dataset.nodeId!;
+      const n = useDoc.getState().doc.nodes[id];
+      if (n?.type !== "text" || n.locked) return;
+      e.preventDefault();
+      useDoc.getState().select([id]);
+      useDoc.getState().setEditing(id);
+    };
+
     el.addEventListener("pointerdown", onPointerDown);
-    return () => el.removeEventListener("pointerdown", onPointerDown);
+    el.addEventListener("dblclick", onDoubleClick);
+    return () => {
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("dblclick", onDoubleClick);
+    };
   }, [ref, spaceHeld]);
 
   return { draft };

@@ -26,8 +26,9 @@ export function CanvasRegion() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || t?.isContentEditable) return;
-      const map: Record<string, "move" | "frame" | "rect"> = {
-        v: "move", f: "frame", r: "rect",
+      if (useDoc.getState().editingId) return; // typing, not shortcutting
+      const map: Record<string, "move" | "frame" | "rect" | "text"> = {
+        v: "move", f: "frame", r: "rect", t: "text",
       };
       const next = map[e.key.toLowerCase()];
       if (next) useTool.getState().setTool(next);
@@ -42,7 +43,9 @@ export function CanvasRegion() {
       ? "grab"
       : tool === "frame" || tool === "rect"
         ? "crosshair"
-        : "default";
+        : tool === "text"
+          ? "text"
+          : "default";
 
   return (
     <main ref={ref} className="canvas-region" style={{ cursor }} tabIndex={-1}>

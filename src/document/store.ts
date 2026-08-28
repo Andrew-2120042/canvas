@@ -20,6 +20,8 @@ interface DocStore {
   doc: Doc;
   currentPageId: PageId;
   selection: NodeId[];
+  /** Text node currently open for inline editing, if any. */
+  editingId: NodeId | null;
 
   // --- mutations -----------------------------------------------------------
   // Every write to `doc` goes through one of these. 1.10 wraps this set in a
@@ -34,6 +36,7 @@ interface DocStore {
   select: (ids: NodeId[]) => void;
   toggleSelect: (id: NodeId) => void;
   clearSelection: () => void;
+  setEditing: (id: NodeId | null) => void;
 }
 
 function emptyDoc(): { doc: Doc; pageId: PageId } {
@@ -56,6 +59,7 @@ export const useDoc = create<DocStore>((set, get) => ({
   doc: initial.doc,
   currentPageId: initial.pageId,
   selection: [],
+  editingId: null,
 
   addNode: (type, rect, parent = null) => {
     const node = createNode(type, rect, { parent });
@@ -141,7 +145,9 @@ export const useDoc = create<DocStore>((set, get) => ({
         : [...s.selection, id],
     })),
 
-  clearSelection: () => set({ selection: [] }),
+  clearSelection: () => set({ selection: [], editingId: null }),
+
+  setEditing: (editingId) => set({ editingId }),
 }));
 
 /** Absolute world position of a node, walking up through its ancestors. */
@@ -159,4 +165,50 @@ export function worldRect(doc: Doc, id: NodeId): Rect | null {
     p = parent.parent;
   }
   return { x, y, width: n.width, height: n.height };
+}
+
+/**
+ * Deepest frame containing a world point, or null for the bare page.
+ *
+ * Only frames can take children — a rectangle or text node containing another
+ * node has no meaning in the DOM model. Iterates in reverse paint order so the
+ * topmost frame wins where several overlap.
+ */
+export function frameAt(
+  doc: Doc,
+  ids: NodeId[],
+  px: number,
+  py: number,
+  ox = 0,
+  oy = 0,
+  exclude: ReadonlySet<NodeId> = new Set(),
+): NodeId | null {
+  for (let i = ids.length - 1; i >= 0; i--) {
+    const id = ids[i];
+    if (exclude.has(id)) continue;
+    const n = doc.nodes[id];
+    if (!n || !n.visible || n.type !== "frame") continue;
+
+    const ax = ox + n.x;
+    const ay = oy + n.y;
+    if (px < ax || py < ay || px > ax + n.width || py > ay + n.height) continue;
+
+    return frameAt(doc, n.children, px, py, ax, ay, exclude) ?? id;
+  }
+  return null;
+}
+
+/** Absolute world origin of a node, excluding its own offset. */
+export function parentOrigin(doc: Doc, id: NodeId | null): { x: number; y: number } {
+  let x = 0;
+  let y = 0;
+  let cur = id;
+  while (cur) {
+    const n = doc.nodes[cur];
+    if (!n) break;
+    x += n.x;
+    y += n.y;
+    cur = n.parent;
+  }
+  return { x, y };
 }
