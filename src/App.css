@@ -24,7 +24,8 @@ body {
 
 .shell-body {
   display: grid;
-  grid-template-columns: var(--leftpanel-w) 1fr var(--rightpanel-w);
+  grid-template-columns:
+    var(--leftpanel-w) var(--toolbar-w) 1fr var(--rightpanel-w);
   min-height: 0;
 }
 
@@ -62,23 +63,51 @@ body {
   overflow-y: auto;
 }
 
-/* Canvas region holds the floating toolbar over the viewport. */
 .canvas-region {
   position: relative;
   min-width: 0;
   min-height: 0;
   background: var(--bg-canvas);
   overflow: hidden;
+  /* The wheel handler owns all scrolling; let it see every gesture. */
+  overscroll-behavior: none;
+  touch-action: none;
+  outline: none;
 }
 
+/* The toolbar is its own column beside the canvas, not an overlay on it —
+   the canvas starts after it. */
 .toolbar {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  width: var(--toolbar-w);
   display: flex;
   flex-direction: column;
-  z-index: 10;
+  align-items: center;
+  padding-top: 6px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+}
+
+/* Content layer: one transformed element so pan/zoom moves a single
+   compositor layer instead of reflowing the tree inside it. */
+.canvas-content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.right-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.zoom-readout {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Placeholder marker for empty regions — removed as each is built out. */
