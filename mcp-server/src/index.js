@@ -42,7 +42,75 @@ function buildServer() {
     },
   );
 
+  server.registerTool(
+    "get_canvas_state",
+    {
+      title: "Get canvas state",
+      description:
+        "The current page as a tree of nodes, in paint order — the first " +
+        "entry is furthest back. Use detail 'full' for style properties.",
+      inputSchema: {
+        pageId: z.string().optional().describe("Defaults to the current page."),
+        detail: z.enum(["summary", "full"]).optional()
+          .describe("'summary' is geometry and names; 'full' adds styles."),
+      },
+    },
+    async (args) => text(await bridge.call("get_canvas_state", args)),
+  );
+
+  server.registerTool(
+    "get_selection",
+    {
+      title: "Get selection",
+      description: "The nodes the user currently has selected, with their properties.",
+      inputSchema: {},
+    },
+    async () => text(await bridge.call("get_selection")),
+  );
+
+  server.registerTool(
+    "get_node",
+    {
+      title: "Get node",
+      description: "One node by id, with full properties.",
+      inputSchema: {
+        id: z.string().describe("The node id."),
+        includeChildren: z.boolean().optional()
+          .describe("Return the whole subtree rather than just this node."),
+      },
+    },
+    async (args) => text(await bridge.call("get_node", args)),
+  );
+
+  server.registerTool(
+    "get_screenshot",
+    {
+      title: "Get screenshot",
+      description:
+        "A PNG of the current page, or of one node when nodeId is given. " +
+        "Use this to see the design rather than only reading its structure.",
+      inputSchema: {
+        nodeId: z.string().optional()
+          .describe("Capture just this node; omit for the whole page."),
+      },
+    },
+    async (args) => {
+      const shot = await bridge.call("get_screenshot", args);
+      return {
+        content: [
+          { type: "image", data: shot.base64, mimeType: shot.mimeType },
+          { type: "text", text: `${shot.width}x${shot.height} px` },
+        ],
+      };
+    },
+  );
+
   return server;
+}
+
+/** Tool results are JSON for the agent to read. */
+function text(value) {
+  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
 }
 
 const sessions = new Map();

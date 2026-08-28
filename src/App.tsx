@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { useDoc } from "./document/store";
 import { loadSaved, startAutosave } from "./document/persist";
 import { startMcp, stopMcp } from "./mcp/bridge";
+import { registerReadTools } from "./mcp/readTools";
+import { registerScreenshotTool } from "./mcp/screenshot";
+
+// Tool implementations register once, before any connection can call them.
+registerReadTools();
+registerScreenshotTool();
 import { TabBar } from "./shell/TabBar";
 import { LeftPanel } from "./shell/LeftPanel";
 import { Toolbar } from "./shell/Toolbar";
