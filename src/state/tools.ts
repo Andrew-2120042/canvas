@@ -35,3 +35,12 @@ export const useTool = create<ToolStore>((set) => ({
   tool: "move",
   setTool: (tool) => set({ tool }),
 }));
+
+/** Keyboard shortcuts. Stub tools get none — nothing to switch into. */
+export const SHORTCUTS: Record<string, Tool> = {
+  v: "move",
+  h: "pan",
+  f: "frame",
+  r: "rect",
+  t: "text",
+};

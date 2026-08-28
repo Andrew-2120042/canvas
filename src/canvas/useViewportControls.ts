@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { useTool } from "../state/tools";
 import { useViewport } from "../state/viewport";
 
 const ARROW_STEP = 40;
@@ -101,7 +102,9 @@ export function useViewportControls(ref: RefObject<HTMLElement | null>) {
     const onBlur = () => setSpaceHeld(false);
 
     const onPointerDown = (e: PointerEvent) => {
-      const panning = e.button === 1 || (e.button === 0 && spaceRef.current);
+      const panTool = useTool.getState().tool === "pan";
+      const panning =
+        e.button === 1 || (e.button === 0 && (spaceRef.current || panTool));
       if (!panning) return;
       e.preventDefault();
       el.setPointerCapture(e.pointerId);

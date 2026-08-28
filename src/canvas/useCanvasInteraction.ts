@@ -79,6 +79,7 @@ export function useCanvasInteraction(
       if ((e.target as HTMLElement).closest(".text-editor")) return;
 
       const tool = useTool.getState().tool;
+      if (tool === "pan") return; // the viewport hook owns this gesture
       const doc = useDoc.getState();
       const start = toWorld(e);
       const target = e.target as HTMLElement;

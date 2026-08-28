@@ -215,7 +215,8 @@ body {
 }
 
 /* The toolbar is its own column beside the canvas, not an overlay on it —
-   the canvas starts after it. */
+   the canvas starts after it. Metrics from docs/reference/measurements.md:
+   36px pitch, #444444 active, #C4C4C4 icons, #3F3F3F dividers. */
 .toolbar {
   display: flex;
   flex-direction: column;
@@ -223,6 +224,48 @@ body {
   padding-top: 6px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
+}
+
+.tool-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tool-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 4px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--icon);
+  cursor: default;
+}
+
+.tool-button:hover { background: var(--bg-row-hover); }
+
+.tool-button.is-active {
+  background: var(--bg-tool-active);
+  color: var(--icon-active);
+}
+
+/* Stubs read as present but not yet available. */
+.tool-button.is-stub {
+  color: var(--icon);
+  opacity: 0.38;
+}
+
+.tool-button.is-stub:hover { background: transparent; }
+
+.tool-divider {
+  width: 18px;
+  height: 1px;
+  margin: 5px 0;
+  background: var(--divider);
 }
 
 /* Content layer: one transformed element so pan/zoom moves a single

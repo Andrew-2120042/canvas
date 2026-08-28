@@ -99,3 +99,92 @@ export function PageIcon() {
     </svg>
   );
 }
+
+// --- toolbar ---------------------------------------------------------------
+
+const T = { width: 18, height: 18, viewBox: "0 0 18 18", fill: "none" } as const;
+
+export function MoveIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round">
+      <path d="M4 2.5 13.5 9l-4.2 1.3L7.6 15z" />
+    </svg>
+  );
+}
+
+export function PanIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+      <path d="M6 8V4.2a1.1 1.1 0 0 1 2.2 0V8m0-.6V3.4a1.1 1.1 0 0 1 2.2 0V8m0-.4V4.6a1.1 1.1 0 0 1 2.2 0V10c0 3-1.9 5-4.4 5S3.6 13.2 3.6 10.5V8.4a1.1 1.1 0 0 1 2.2 0" />
+    </svg>
+  );
+}
+
+export function ToolFrameIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.3">
+      <path d="M3 5.5V3h2.5M12.5 3H15v2.5M15 12.5V15h-2.5M5.5 15H3v-2.5" />
+    </svg>
+  );
+}
+
+export function ToolRectIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.3">
+      <rect x="3.5" y="4" width="11" height="10" rx="1" />
+    </svg>
+  );
+}
+
+export function PenIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+      <path d="M9 2.5 13.5 7 9 15 4.5 7z" />
+      <circle cx="9" cy="7" r="1.4" />
+    </svg>
+  );
+}
+
+export function ToolTextIcon() {
+  return (
+    <svg {...T} fill="currentColor">
+      <text x="1" y="13.5" fontSize="12.5" fontFamily="inherit">Aa</text>
+    </svg>
+  );
+}
+
+export function ToolImageIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.2">
+      <rect x="2.5" y="4" width="13" height="10" rx="1.2" />
+      <path d="M3 12l3.5-3.5L9 11l3-3 3 3" />
+      <circle cx="6.2" cy="7" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function ShaderIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.2">
+      <rect x="2.5" y="2.5" width="13" height="13" rx="1.5" />
+      <path d="M9 5.5 12.5 9 9 12.5 5.5 9z" />
+    </svg>
+  );
+}
+
+export function ComponentIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.2">
+      <path d="M9 2.2 11.6 4.8 9 7.4 6.4 4.8zM9 10.6l2.6 2.6L9 15.8l-2.6-2.6zM4.8 6.4 7.4 9l-2.6 2.6L2.2 9zM13.2 6.4 15.8 9l-2.6 2.6L10.6 9z" />
+    </svg>
+  );
+}
+
+export function TokenIcon() {
+  return (
+    <svg {...T} stroke="currentColor" strokeWidth="1.2">
+      <circle cx="9" cy="9" r="6" />
+      <circle cx="9" cy="9" r="2.2" />
+    </svg>
+  );
+}
