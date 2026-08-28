@@ -207,6 +207,8 @@ const sessions = new Map();
 
 const httpServer = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
+  console.error(`[http] ${req.method} ${url.pathname}` +
+    (req.headers.authorization ? " (with auth header)" : ""));
 
   if (url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" });

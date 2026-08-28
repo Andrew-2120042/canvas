@@ -78,7 +78,16 @@ export function registerWriteTools(): void {
     const patch = stylePatch(args);
     if (Object.keys(patch).length) st.updateNode(id, patch, key);
     st.select([id]);
-    return { id, ...rect, type, parentId: parent };
+    // Echo what was actually applied, not just what was asked for: the agent
+    // has no other way to confirm a property took effect, and it flagged the
+    // omission the first time it used this tool.
+    const made = activeFile().doc.nodes[id];
+    return {
+      id, type, parentId: parent,
+      x: made.x, y: made.y, width: made.width, height: made.height,
+      name: made.name, fill: made.fill, opacity: made.opacity, radius: made.radius,
+      ...(made.type === "text" ? { text: made.text, fontSize: made.fontSize } : {}),
+    };
   });
 
   registerTool("update_node", (args) => {
@@ -106,6 +115,9 @@ export function registerWriteTools(): void {
     return {
       id, type: after.type, name: after.name,
       x: after.x, y: after.y, width: after.width, height: after.height,
+      fill: after.fill, opacity: after.opacity, radius: after.radius,
+      visible: after.visible, locked: after.locked,
+      ...(after.type === "text" ? { text: after.text, fontSize: after.fontSize } : {}),
     };
   });
 
