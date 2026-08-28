@@ -390,13 +390,18 @@ body {
 }
 
 /* Content layer: one transformed element so pan/zoom moves a single
-   compositor layer instead of reflowing the tree inside it. */
+   compositor layer instead of reflowing the tree inside it.
+
+   Deliberately NOT `will-change: transform`. That promotes the subtree to a
+   cached texture rasterised once at 1x, which the GPU then upscales — text
+   turns to mush past a few hundred percent zoom. Without it the engine
+   re-rasterises at the composited scale and glyphs stay vector-crisp, which
+   is the whole point of rendering the canvas as real DOM. */
 .canvas-content {
   position: absolute;
   top: 0;
   left: 0;
   transform-origin: 0 0;
-  will-change: transform;
 }
 
 .right-panel-header {
