@@ -12,6 +12,11 @@
  * edits merge sanely later.
  */
 
+import type {
+  BorderStyle, FilterStyle, GuideStyle, OutlineStyle, ShadowStyle,
+  TextStrokeStyle, UnderlineStyle,
+} from "./style";
+
 export type NodeId = string;
 export type PageId = string;
 
@@ -41,9 +46,29 @@ export interface SceneNode {
   opacity: number;
   radius: number;
 
+  /** Optional style groups. Absent means the section is empty in the panel;
+   *  present means it renders. Each maps to real CSS in style.ts. */
+  outline?: OutlineStyle;
+  border?: BorderStyle;
+  shadows?: ShadowStyle[];
+  innerShadows?: ShadowStyle[];
+  filters?: FilterStyle[];
+
+  /** Frames only. */
+  guides?: GuideStyle;
+  clipContent?: boolean;
+
   /** Text nodes only. */
   text?: string;
+  fontFamily?: string;
+  fontWeight?: number;
   fontSize?: number;
+  lineHeight?: number;
+  letterSpacing?: number;
+  textAlign?: "left" | "center" | "right";
+  preWrap?: boolean;
+  underline?: UnderlineStyle;
+  textStroke?: TextStrokeStyle;
 }
 
 export interface Page {
@@ -86,7 +111,16 @@ export function createNode(
     fill: type === "frame" ? "#FFFFFF" : type === "text" ? "#222222" : "#D9D9D9",
     opacity: 1,
     radius: 0,
-    ...(type === "text" ? { text: "Text", fontSize: 16 } : {}),
+    ...(type === "text"
+      ? {
+          text: "Text",
+          fontSize: 16,
+          lineHeight: 21,
+          letterSpacing: 0,
+          textAlign: "left" as const,
+          preWrap: true,
+        }
+      : {}),
     ...overrides,
   };
 }

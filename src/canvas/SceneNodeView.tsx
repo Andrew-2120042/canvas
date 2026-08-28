@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useDoc } from "../document/store";
+import { nodeCss, rgba } from "../document/style";
 import type { NodeId } from "../document/types";
 
 /**
@@ -51,18 +52,30 @@ export function SceneNodeView({ id }: { id: NodeId }) {
       className={`scene-node scene-node--${node.type}`}
       data-node-id={node.id}
       style={{
+        ...nodeCss(node),
         left: node.x,
         top: node.y,
         width: node.width,
         height: isText ? undefined : node.height,
         minHeight: isText ? node.height : undefined,
-        background: isText ? "transparent" : node.fill,
+        background: isText ? "transparent" : rgba(node.fill, 1),
         color: isText ? node.fill : undefined,
-        fontSize: isText ? node.fontSize : undefined,
         opacity: node.opacity,
         borderRadius: node.radius || undefined,
+        overflow: node.clipContent ? "hidden" : undefined,
       }}
     >
+      {node.guides?.visible && (
+        <div
+          className="node-guides"
+          style={{
+            backgroundImage:
+              `linear-gradient(to right, ${rgba(node.guides.color, node.guides.opacity)} 1px, transparent 1px),` +
+              `linear-gradient(to bottom, ${rgba(node.guides.color, node.guides.opacity)} 1px, transparent 1px)`,
+            backgroundSize: `${node.guides.size}px ${node.guides.size}px`,
+          }}
+        />
+      )}
       {isText &&
         (editing ? (
           <div

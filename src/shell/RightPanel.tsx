@@ -1,7 +1,12 @@
 import { useDoc } from "../document/store";
 import type { SceneNode } from "../document/types";
 import { useViewport } from "../state/viewport";
-import { ColorField, NumberField, Section } from "../panels/fields";
+import { CheckRow, ColorField, NumberField, Section } from "../panels/fields";
+import {
+  BorderSection, ExportSection, FiltersSection, GuidesSection, OtherStylesSection,
+  OutlineSection, RadiusSection, SelectionColoursSection, ShadowSection,
+  TextSection, TextStrokeSection, UnderlineSection,
+} from "../panels/sections";
 
 /** Shared value across a multi-selection, or null when they disagree. */
 function common<T>(nodes: SceneNode[], pick: (n: SceneNode) => T): T | null {
@@ -62,6 +67,20 @@ export function RightPanel() {
             </div>
           </Section>
 
+          {nodes[0].type !== "text" && (
+            <RadiusSection node={nodes[0]} patch={(p) => setAll(p)} />
+          )}
+
+          {nodes[0].type === "frame" && (
+            <Section title="Clip content">
+              <CheckRow
+                checked={!!nodes[0].clipContent}
+                label="Clip content"
+                onToggle={() => setAll({ clipContent: !nodes[0].clipContent })}
+              />
+            </Section>
+          )}
+
           <Section title="Blending">
             <div className="field-row">
               <NumberField
@@ -82,6 +101,46 @@ export function RightPanel() {
               onCommit={(hex) => setAll({ fill: hex })}
             />
           </Section>
+
+          {/* Per-type sections. Editing a multi-selection applies to all, but
+              the controls read from the first node — the reference does the
+              same rather than trying to merge structured styles. */}
+          {(() => {
+            const n = nodes[0];
+            const patch = (p: Partial<SceneNode>) => setAll(p);
+            const isText = n.type === "text";
+            const isFrame = n.type === "frame";
+            return (
+              <>
+                {isText ? (
+                  <>
+                    <TextSection node={n} patch={patch} />
+                    <UnderlineSection node={n} patch={patch} />
+                    <TextStrokeSection node={n} patch={patch} />
+                    <ShadowSection node={n} patch={patch} title="Shadow"
+                      field="shadows" withSpread={false} />
+                    <FiltersSection node={n} patch={patch} />
+                    <OtherStylesSection node={n} patch={patch} />
+                  </>
+                ) : (
+                  <>
+                    <OutlineSection node={n} patch={patch} />
+                    <BorderSection node={n} patch={patch} />
+                    <ShadowSection node={n} patch={patch} title="Shadow"
+                      field="shadows" withSpread />
+                    <ShadowSection node={n} patch={patch} title="Inner shadow"
+                      field="innerShadows" withSpread />
+                    <FiltersSection node={n} patch={patch} />
+                    {isFrame && <GuidesSection node={n} patch={patch} />}
+                  </>
+                )}
+                {n.children.length > 0 && (
+                  <SelectionColoursSection nodeIds={[n.id]} />
+                )}
+                <ExportSection />
+              </>
+            );
+          })()}
         </>
       )}
     </aside>

@@ -132,3 +132,101 @@ export function ColorField({
 function round(n: number) {
   return Math.abs(n % 1) < 0.005 ? Math.round(n) : Math.round(n * 100) / 100;
 }
+
+/** Dropdown styled like the reference's select fields. */
+export function SelectField<T extends string>({
+  label,
+  value,
+  options,
+  onCommit,
+}: {
+  label?: ReactNode;
+  value: T;
+  options: readonly T[];
+  onCommit: (v: T) => void;
+}) {
+  return (
+    <label className="field">
+      {label && <span className="field-label">{label}</span>}
+      <select
+        className="field-input field-select"
+        value={value}
+        onChange={(e) => onCommit(e.target.value as T)}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** Slider paired with a numeric field, as the Radius section uses. */
+export function SliderField({
+  value,
+  min = 0,
+  max = 100,
+  onCommit,
+}: {
+  value: number | null;
+  min?: number;
+  max?: number;
+  onCommit: (n: number) => void;
+}) {
+  return (
+    <div className="field-row slider-row">
+      <input
+        className="slider"
+        type="range"
+        min={min}
+        max={max}
+        value={value ?? 0}
+        onChange={(e) => onCommit(parseFloat(e.target.value))}
+        onKeyDown={(e) => e.stopPropagation()}
+      />
+      <NumberField label="" value={value} onCommit={onCommit} />
+    </div>
+  );
+}
+
+/** Small square icon button used for section add/remove/visibility. */
+export function IconButton({
+  title,
+  active,
+  onClick,
+  children,
+}: {
+  title: string;
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      className={`icon-button${active ? " is-active" : ""}`}
+      title={title}
+      onClick={onClick}
+      tabIndex={-1}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function CheckRow({
+  checked,
+  label,
+  onToggle,
+}: {
+  checked: boolean;
+  label: ReactNode;
+  onToggle: () => void;
+}) {
+  return (
+    <label className="check-row">
+      <input type="checkbox" checked={checked} onChange={onToggle} />
+      <span>{label}</span>
+    </label>
+  );
+}
