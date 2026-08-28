@@ -92,3 +92,77 @@ Move, Pan, Frame, Rectangle, Pen, Text, Image, Shader, Component, Token.
 - Blue dashed alignment guides while dragging
 - Selection size badge below selection, e.g. `Fit 404 x 70`
 - Zoom % shown top-right of the right panel
+
+---
+
+# Additional node types (later phases)
+
+## SVG (`60`-`63`) — Phase 5
+
+Layer icon: square with corner nodes, labelled `SVG`, expandable.
+Sections: Layout, `Wrap in flex`, **Clip content** (checked), Radius, Blending,
+Fill, Outline, Border, Shadow, Inner shadow, Filters, **Selection colors**, Export.
+
+## Shader (`50`-`52`) — Phase 8
+
+The diamond toolbar icon is the **shader tool**. It opens a modal picker with a
+4-column thumbnail grid: Mesh Gradient, Static Mesh Gradient, Static Radial
+Gradient, Dithering, Grain Gradient, Dot Orbit, Dot Grid, Warp, Spiral, Swirl,
+Waves, Neuro Noise, Perlin Noise, Simplex Noise, Voronoi, Pulsing Border, more
+below the fold.
+
+Panel gains **Presets** (Default / Jungle / Droplet / Swirl) and **Parameters**
+(all slider + numeric): Speed, Scale, Rotation, Softness, Density, Distortion,
+Stroke width, Stroke taper, Stroke cap, Noise frequency, Noise power, Offset X,
+Offset Y — varying per shader — plus a **Foreground** colour, then the normal
+Fill/Outline/Border/Shadow/Filters/Video/Export set.
+
+## Selection colors
+
+Not frame-only: appears on any node whose subtree holds colours (frames, SVG).
+Rows are `hex + opacity + a count badge`, ordered by usage count descending.
+
+# Gradient fill (`90`)
+
+Selecting the Gradient tab replaces the hex row with:
+- a gradient preview bar with draggable end stops and a midpoint diamond
+- three gradient-type buttons (linear / radial / angular)
+- a sliders icon, a rotate icon, and `+` to add a stop
+- one row per stop: colour hex + opacity + `-`
+
+# Filters menu (`91`)
+
+Two groups of the same eight entries: **Layer** (CSS `filter`) and **Backdrop**
+(CSS `backdrop-filter`) — Blur, Brightness, Contrast, Grayscale, Hue rotate,
+Invert, Saturation, Sepia. Active entry carries a checkmark.
+
+# Theme tab (`40`, `41`) — Phase 6
+
+Empty state: header reads `No tokens` with a search icon and `+`; centred
+illustration, "Theme tokens", "Create tokens to get started, or explore the
+starter theme.", and a `Create token` button.
+
+`Create token` opens a menu in three groups:
+1. Color, Radius
+2. Spacing, Container, Breakpoint
+3. Font family, Font weight, Font size, Line height, Letter spacing
+
+Matches the token list in `claude.md` Phase 6 exactly.
+
+# Dashboard (`80`) — needed for 1.8
+
+Same tab bar. Left sidebar stays **240px**:
+- account row: avatar, name, chevron
+- `Search` with `⌘F`
+- `Recents` (selected), `Learn`
+- divider
+- team name, `Files`, `Archive`, `Settings`
+- `Upgrade` card, spacer, `Using agents` card with a `Get started` button
+- footer `What's new · Feedback`
+
+Main area: `Recents` heading, a light `+ New file` button, grid/list view
+toggle, then file cards — title, subtitle (`Edited 29 minutes ago`), owner
+avatar, and a thumbnail of the canvas.
+
+Phase 1 needs only: Recents, New file, and the file cards. Team, Archive,
+Settings, Upgrade and agents are all out of scope until Phase 4+.

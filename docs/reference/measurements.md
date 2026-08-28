@@ -45,7 +45,11 @@ reference UI while building is fine."
 | Divider / border | `#373737` |
 | Input field background | `#383838` (1px top highlight `#464646`) |
 | Segmented control track | `#353535` |
+| Layer row hover | `#333333` |
 | Selected row background | `#3C3C3C` |
+| Toolbar active button | `#444444` |
+| Toolbar icon (inactive / active) | `#C4C4C4` / `#EDEDED` |
+| Menu highlight | macOS accent blue |
 | Primary text | `#EAEAEA` |
 | Canvas backdrop (= page fill) | `#999999` |
 
@@ -74,7 +78,9 @@ with a `+` on the right; populated ones expand with controls.
 ## Still needed
 
 - Exact indent per nesting level
-- Toolbar button size, spacing, divider position, active/inactive treatment
-- Dashboard tab state
-- Hover states for buttons and inputs
-- Font family
+- Hover states for buttons and inputs (layer row hover is captured)
+
+## Font
+
+Use the platform UI stack, per instruction to match what the shell already
+uses. Paper appears to ship a custom typeface; not reproducing it.
