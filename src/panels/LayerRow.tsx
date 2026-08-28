@@ -1,4 +1,4 @@
-import { useDoc } from "../document/store";
+import { useActive, useDoc } from "../document/store";
 import type { NodeId } from "../document/types";
 import { useUi } from "../state/ui";
 import {
@@ -16,8 +16,8 @@ function TypeIcon({ type }: { type: string }) {
 
 /** One layer row plus its subtree. Depth drives the indent. */
 export function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
-  const node = useDoc((s) => s.doc.nodes[id]);
-  const selected = useDoc((s) => s.selection.includes(id));
+  const node = useActive((f) => f.doc.nodes[id]);
+  const selected = useActive((f) => f.selection.includes(id));
   const expanded = useUi((s) => !!s.expanded[id]);
   const toggleExpanded = useUi((s) => s.toggleExpanded);
 
@@ -80,7 +80,7 @@ export function LayerRow({ id, depth }: { id: NodeId; depth: number }) {
 
       {hasChildren &&
         expanded &&
-        node.children.map((childId) => (
+        node.children.map((childId: string) => (
           <LayerRow key={childId} id={childId} depth={depth + 1} />
         ))}
     </>

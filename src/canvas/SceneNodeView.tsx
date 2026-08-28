@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useDoc } from "../document/store";
+import { useActive, useDoc } from "../document/store";
 import { nodeCss, rgba } from "../document/style";
 import type { NodeId } from "../document/types";
 
@@ -8,8 +8,8 @@ import type { NodeId } from "../document/types";
  * children — the layer tree in 1.5 is a view over exactly this structure.
  */
 export function SceneNodeView({ id }: { id: NodeId }) {
-  const node = useDoc((s) => s.doc.nodes[id]);
-  const editing = useDoc((s) => s.editingId === id);
+  const node = useActive((f) => f.doc.nodes[id]);
+  const editing = useActive((f) => f.editingId === id);
   const editorRef = useRef<HTMLDivElement>(null);
   /** Latest typed value, mirrored on every input. */
   const pending = useRef<string | null>(null);
@@ -100,7 +100,7 @@ export function SceneNodeView({ id }: { id: NodeId }) {
           node.text
         ))}
 
-      {node.children.map((childId) => (
+      {node.children.map((childId: string) => (
         <SceneNodeView key={childId} id={childId} />
       ))}
     </div>

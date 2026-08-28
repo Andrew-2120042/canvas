@@ -32,11 +32,132 @@ body {
 .tabbar {
   display: flex;
   align-items: center;
+  gap: 2px;
   /* Traffic lights overlay this bar's left edge; keep tabs clear of them. */
   padding-left: var(--traffic-lights-w);
   background: var(--bg-chrome);
   border-bottom: 1px solid var(--border);
 }
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  max-width: 200px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+
+.tab:hover { background: var(--bg-row-hover); }
+
+.tab.is-active {
+  background: var(--bg-row-selected);
+  color: var(--text);
+}
+
+.tab-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tab-close {
+  margin-left: 2px;
+  padding: 0 2px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.tab-close:hover { color: var(--text); }
+
+.tab--new { padding: 0 6px; }
+
+/* --- dashboard ---------------------------------------------------------- */
+
+.dashboard {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 32px;
+  background: var(--bg-chrome);
+}
+
+.dashboard-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.dashboard-title {
+  flex: 1;
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.new-file-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: #F2F2F2;
+  color: #1A1A1A;
+  font: inherit;
+  cursor: default;
+}
+
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.file-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  overflow: hidden;
+}
+
+.file-card:hover { border-color: #4A4A4A; }
+
+.file-card-head { padding: 12px 14px 10px; }
+
+.file-card-name {
+  display: block;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.file-card-meta { color: var(--text-dim); font-size: 11px; }
+
+.file-card-thumb {
+  display: grid;
+  place-items: center;
+  height: 130px;
+  margin: 0 10px 10px;
+  border-radius: 6px;
+  background: var(--bg-canvas);
+}
+
+.file-card-count { color: rgba(0, 0, 0, 0.5); font-size: 11px; }
 
 /* Empty areas of the tab bar drag the window, standing in for the title bar
    that Overlay mode removes. Interactive children opt out via .no-drag. */

@@ -1,4 +1,4 @@
-import { useDoc } from "../document/store";
+import { useActive, useDoc } from "../document/store";
 import type { SceneNode } from "../document/types";
 import { useViewport } from "../state/viewport";
 import { CheckRow, ColorField, NumberField, Section } from "../panels/fields";
@@ -24,11 +24,11 @@ function common<T>(nodes: SceneNode[], pick: (n: SceneNode) => T): T | null {
  */
 export function RightPanel() {
   const zoom = useViewport((s) => s.zoom);
-  const doc = useDoc((s) => s.doc);
-  const selection = useDoc((s) => s.selection);
-  const currentPageId = useDoc((s) => s.currentPageId);
+  const doc = useActive((f) => f.doc);
+  const selection = useActive((f) => f.selection);
+  const currentPageId = useActive((f) => f.currentPageId);
 
-  const nodes = selection
+  const nodes = (selection as string[])
     .map((id) => doc.nodes[id])
     .filter((n): n is SceneNode => !!n);
 

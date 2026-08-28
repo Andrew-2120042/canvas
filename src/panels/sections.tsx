@@ -1,4 +1,4 @@
-import { useDoc } from "../document/store";
+import { useActive } from "../document/store";
 import {
   FILTER_FNS, selectionColours,
   type BorderSide, type FilterStyle, type ShadowStyle,
@@ -343,7 +343,7 @@ export function GuidesSection({ node, patch }: { node: SceneNode; patch: Patch }
 
 /** Read-only tally of the colours used inside the selection. */
 export function SelectionColoursSection({ nodeIds }: { nodeIds: string[] }) {
-  const nodes = useDoc((s) => s.doc.nodes);
+  const nodes = useActive((f) => f.doc.nodes);
   const colours = selectionColours(nodes, nodeIds);
   if (colours.length === 0) return null;
   return (

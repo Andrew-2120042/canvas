@@ -1,6 +1,7 @@
 import { useEffect, useState, type RefObject } from "react";
 import {
-  collectWorldRects, frameAt, parentOrigin, rectsIntersect, useDoc, type Rect,
+  activeFile, collectWorldRects, frameAt, parentOrigin, rectsIntersect, useDoc,
+  type Rect,
 } from "../document/store";
 import { useTool } from "../state/tools";
 import { useViewport } from "../state/viewport";
@@ -80,15 +81,16 @@ export function useCanvasInteraction(
 
       const tool = useTool.getState().tool;
       if (tool === "pan") return; // the viewport hook owns this gesture
-      const doc = useDoc.getState();
+      const store = useDoc.getState();
+      const af = activeFile();
       const start = toWorld(e);
       const target = e.target as HTMLElement;
 
       // --- resize ----------------------------------------------------------
       const handleEl = target.closest("[data-handle]") as HTMLElement | null;
-      if (handleEl && doc.selection.length === 1) {
-        const id = doc.selection[0];
-        const n = doc.doc.nodes[id];
+      if (handleEl && af.selection.length === 1) {
+        const id = af.selection[0];
+        const n = af.doc.nodes[id];
         if (n) {
           const handle = handleEl.dataset.handle as HandleKey;
           const origin: Rect = { x: n.x, y: n.y, width: n.width, height: n.height };
@@ -121,15 +123,15 @@ export function useCanvasInteraction(
             // Drop into whichever frame the press landed in. A frame dragged
             // out over another frame still nests — matching how the DOM would
             // read the result.
-            const st = useDoc.getState();
-            const page = st.doc.pages[st.currentPageId];
-            const parent = frameAt(st.doc, page.children, start.x, start.y);
+            const cur = activeFile();
+            const page = cur.doc.pages[cur.currentPageId];
+            const parent = frameAt(cur.doc, page.children, start.x, start.y);
             if (parent) {
-              const o = parentOrigin(st.doc, parent);
+              const o = parentOrigin(cur.doc, parent);
               rect = { ...rect, x: rect.x - o.x, y: rect.y - o.y };
             }
 
-            const id = st.addNode(tool, rect, parent);
+            const id = useDoc.getState().addNode(tool, rect, parent);
             useDoc.getState().select([id]);
             useTool.getState().setTool("move");
             if (tool === "text") useDoc.getState().setEditing(id);
@@ -144,8 +146,8 @@ export function useCanvasInteraction(
         if (!nodeEl) {
           // Empty canvas: rubber-band select. Additive with shift held, so an
           // existing selection can be extended rather than replaced.
-          const base = e.shiftKey ? doc.selection : [];
-          if (!e.shiftKey) doc.clearSelection();
+          const base = e.shiftKey ? af.selection : [];
+          if (!e.shiftKey) store.clearSelection();
           e.preventDefault();
           setMarquee({ x: start.x, y: start.y, width: 0, height: 0 });
           drag(
@@ -153,33 +155,33 @@ export function useCanvasInteraction(
             (w) => {
               const box = normalise(start.x, start.y, w.x, w.y);
               setMarquee(box);
-              const st = useDoc.getState();
-              const page = st.doc.pages[st.currentPageId];
-              const hits = collectWorldRects(st.doc, page.children)
+              const cur = activeFile();
+              const page = cur.doc.pages[cur.currentPageId];
+              const hits = collectWorldRects(cur.doc, page.children)
                 .filter((n) => n.visible && !n.locked && rectsIntersect(box, n))
                 .map((n) => n.id);
-              st.select([...new Set([...base, ...hits])]);
+              useDoc.getState().select([...new Set([...base, ...hits])]);
             },
             () => setMarquee(null),
           );
           return;
         }
         const id = nodeEl.dataset.nodeId!;
-        const node = doc.doc.nodes[id];
+        const node = af.doc.nodes[id];
         if (!node || node.locked) return;
 
         if (e.shiftKey) {
-          doc.toggleSelect(id);
-        } else if (!doc.selection.includes(id)) {
-          doc.select([id]);
+          store.toggleSelect(id);
+        } else if (!af.selection.includes(id)) {
+          store.select([id]);
         }
 
         // Capture origins up front so each move is applied to the start
         // position, never accumulated from the previous frame.
-        const ids = useDoc.getState().selection;
-        const origins = new Map(
-          ids.map((nid) => {
-            const n = useDoc.getState().doc.nodes[nid];
+        const ids = activeFile().selection;
+        const origins = new Map<string, { x: number; y: number }>(
+          ids.map((nid: string) => {
+            const n = activeFile().doc.nodes[nid];
             return [nid, { x: n.x, y: n.y }] as const;
           }),
         );
@@ -227,7 +229,7 @@ export function useCanvasInteraction(
       ) as HTMLElement | null;
       if (!nodeEl) return;
       const id = nodeEl.dataset.nodeId!;
-      const n = useDoc.getState().doc.nodes[id];
+      const n = activeFile().doc.nodes[id];
       if (n?.type !== "text" || n.locked) return;
       e.preventDefault();
       useDoc.getState().select([id]);

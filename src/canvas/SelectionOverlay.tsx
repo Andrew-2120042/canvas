@@ -1,4 +1,4 @@
-import { useDoc, worldRect } from "../document/store";
+import { useActive, worldRect } from "../document/store";
 import { useViewport } from "../state/viewport";
 
 /** Resize handle positions, as unit fractions of the selection box. */
@@ -20,15 +20,15 @@ export type HandleKey = (typeof HANDLES)[number]["key"];
  * outlines stay 1px and handles stay 8px at every zoom level.
  */
 export function SelectionOverlay() {
-  const doc = useDoc((s) => s.doc);
-  const selection = useDoc((s) => s.selection);
+  const doc = useActive((f) => f.doc);
+  const selection = useActive((f) => f.selection);
   const { x, y, zoom } = useViewport();
 
   if (selection.length === 0) return null;
 
   return (
     <div className="selection-overlay">
-      {selection.map((id) => {
+      {selection.map((id: string) => {
         // A hidden node stays selected so it can be brought back, but drawing
         // its box would outline empty space.
         if (!doc.nodes[id]?.visible) return null;

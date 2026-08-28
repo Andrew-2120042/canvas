@@ -1,12 +1,13 @@
-import { useDoc } from "../document/store";
+import { useActive, useDoc } from "../document/store";
 import { useUi } from "../state/ui";
 import { LayerRow } from "../panels/LayerRow";
 import { ChevronIcon, PageIcon, PlusIcon } from "../ui/icons";
 
 /** Title, Design/Theme switcher, Pages list, and the layer tree. */
 export function LeftPanel() {
-  const doc = useDoc((s) => s.doc);
-  const currentPageId = useDoc((s) => s.currentPageId);
+  const doc = useActive((f) => f.doc);
+  const fileName = useActive((f) => f.name);
+  const currentPageId = useActive((f) => f.currentPageId);
   const clearSelection = useDoc((s) => s.clearSelection);
   const { pagesOpen, togglePages, panelTab, setPanelTab } = useUi();
 
@@ -15,7 +16,7 @@ export function LeftPanel() {
   return (
     <aside className="left-panel">
       <div className="panel-title">
-        <span className="panel-title-name">Untitled</span>
+        <span className="panel-title-name">{fileName}</span>
       </div>
 
       <div className="segmented">
@@ -48,16 +49,22 @@ export function LeftPanel() {
               <ChevronIcon open={pagesOpen} />
             </button>
             <span className="section-title">Pages</span>
-            <button className="section-action" title="New page" tabIndex={-1}>
+            <button
+              className="section-action"
+              title="New page"
+              onClick={() => useDoc.getState().addPage()}
+              tabIndex={-1}
+            >
               <PlusIcon />
             </button>
           </div>
 
           {pagesOpen &&
-            doc.pageOrder.map((pid) => (
+            doc.pageOrder.map((pid: string) => (
               <div
                 key={pid}
                 className={`page-row${pid === currentPageId ? " is-selected" : ""}`}
+                onPointerDown={() => useDoc.getState().setCurrentPage(pid)}
               >
                 <span className="layer-icon"><PageIcon /></span>
                 <span className="layer-name">{doc.pages[pid].name}</span>
@@ -69,7 +76,7 @@ export function LeftPanel() {
           {/* Mirrors the real DOM order: first child paints first, so it
               reads top-down exactly as the document nests. */}
           <div className="layer-tree" onPointerDown={() => clearSelection()}>
-            {page.children.map((id) => (
+            {page.children.map((id: string) => (
               <LayerRow key={id} id={id} depth={0} />
             ))}
           </div>

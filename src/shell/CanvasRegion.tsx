@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useViewport } from "../state/viewport";
 import { SHORTCUTS, useTool } from "../state/tools";
-import { useDoc } from "../document/store";
+import { activeFile, useActive } from "../document/store";
 import { useViewportControls } from "../canvas/useViewportControls";
 import { useCanvasInteraction } from "../canvas/useCanvasInteraction";
 import { SceneNodeView } from "../canvas/SceneNodeView";
@@ -18,14 +18,14 @@ export function CanvasRegion() {
 
   const { x, y, zoom } = useViewport();
   const tool = useTool((s) => s.tool);
-  const page = useDoc((s) => s.doc.pages[s.currentPageId]);
+  const page = useActive((f) => f.doc.pages[f.currentPageId]);
 
   // Tool shortcuts: V/H/F/R/T. Stub tools deliberately have none.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || t?.isContentEditable) return;
-      if (useDoc.getState().editingId) return; // typing, not shortcutting
+      if (activeFile().editingId) return; // typing, not shortcutting
       const next = SHORTCUTS[e.key.toLowerCase()];
       if (next) useTool.getState().setTool(next);
     };
@@ -56,7 +56,7 @@ export function CanvasRegion() {
         className="canvas-content"
         style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})` }}
       >
-        {page.children.map((id) => (
+        {page.children.map((id: string) => (
           <SceneNodeView key={id} id={id} />
         ))}
 
