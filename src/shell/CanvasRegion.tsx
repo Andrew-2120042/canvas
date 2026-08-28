@@ -48,7 +48,14 @@ export function CanvasRegion() {
           : "default";
 
   return (
-    <main ref={ref} className="canvas-region" style={{ cursor }} tabIndex={-1}>
+    <main
+      ref={ref}
+      className="canvas-region"
+      /* The backdrop is the page fill, not a chrome colour — the reference
+         shows this same value in the Page fill swatch. */
+      style={{ cursor, background: page.background }}
+      tabIndex={-1}
+    >
       <div
         className="canvas-content"
         style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})` }}

@@ -31,6 +31,7 @@ interface DocStore {
   setNodeRect: (id: NodeId, rect: Partial<Rect>) => void;
   updateNode: (id: NodeId, patch: Partial<SceneNode>) => void;
   removeNodes: (ids: NodeId[]) => void;
+  setPageBackground: (pageId: PageId, background: string) => void;
 
   // --- selection -----------------------------------------------------------
   select: (ids: NodeId[]) => void;
@@ -135,6 +136,14 @@ export const useDoc = create<DocStore>((set, get) => ({
         selection: get().selection.filter((id) => !doomed.has(id)),
       };
     }),
+
+  setPageBackground: (pageId, background) =>
+    set((s) => ({
+      doc: {
+        ...s.doc,
+        pages: { ...s.doc.pages, [pageId]: { ...s.doc.pages[pageId], background } },
+      },
+    })),
 
   select: (ids) => set({ selection: ids }),
 

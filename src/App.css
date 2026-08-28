@@ -326,3 +326,78 @@ body {
   background: rgba(43, 127, 255, 0.10);
   pointer-events: none;
 }
+
+/* --- properties panel --------------------------------------------------- */
+
+.prop-section {
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.prop-section-head {
+  display: flex;
+  align-items: center;
+  height: var(--section-header-h);
+}
+
+.prop-section-title {
+  flex: 1;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.field-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--field-h);
+  padding: 0 6px;
+  background: var(--bg-field);
+  border-radius: 5px;
+  min-width: 0;
+}
+
+.field-label {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.field-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.field-input--pct {
+  width: 44px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.field-suffix {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.colour-field { margin-bottom: 6px; }
+
+.colour-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  flex: 0 0 auto;
+}
