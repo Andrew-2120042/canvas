@@ -75,7 +75,7 @@ interface DocStore {
   setPageBackground: (pageId: PageId, background: string) => void;
 
   // nodes
-  addNode: (type: NodeType, rect: Rect, parent?: NodeId | null) => NodeId;
+  addNode: (type: NodeType, rect: Rect, parent?: NodeId | null, key?: string) => NodeId;
   setNodeRect: (id: NodeId, rect: Partial<Rect>, key?: string) => void;
   updateNode: (id: NodeId, patch: Partial<SceneNode>, key?: string) => void;
   removeNodes: (ids: NodeId[]) => void;
@@ -266,7 +266,7 @@ export const useDoc = create<DocStore>((set, get) => {
         return f;
       }),
 
-    addNode: (type, rect, parent = null) => {
+    addNode: (type, rect, parent = null, key) => {
       const node = createNode(type, rect, { parent });
       edit((f) => {
         const nodes = { ...f.doc.nodes, [node.id]: node };
@@ -280,7 +280,7 @@ export const useDoc = create<DocStore>((set, get) => {
         }
         f.doc = { ...f.doc, nodes, pages };
         return f;
-      });
+      }, { key });
       return node.id;
     },
 

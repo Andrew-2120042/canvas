@@ -105,6 +105,96 @@ function buildServer() {
     },
   );
 
+  // --- write tools ---------------------------------------------------------
+  // Each of these lands on the same store action a human interaction calls,
+  // which is why an agent edit undoes exactly like a hand-made one.
+
+  server.registerTool(
+    "create_node",
+    {
+      title: "Create node",
+      description:
+        "Add a node to the current page. Coordinates are relative to " +
+        "parentId when given, otherwise to the page.",
+      inputSchema: {
+        type: z.enum(["frame", "rect", "text", "image", "path"]),
+        x: z.number().optional(),
+        y: z.number().optional(),
+        width: z.number().optional(),
+        height: z.number().optional(),
+        parentId: z.string().optional().describe("A frame to nest inside."),
+        name: z.string().optional(),
+        fill: z.string().optional().describe("CSS colour, e.g. #E8622A."),
+        opacity: z.number().optional().describe("0 to 1."),
+        radius: z.number().optional(),
+        text: z.string().optional().describe("Text nodes only."),
+        fontSize: z.number().optional().describe("Text nodes only."),
+      },
+    },
+    async (args) => text(await bridge.call("create_node", args)),
+  );
+
+  server.registerTool(
+    "update_node",
+    {
+      title: "Update node",
+      description: "Change any subset of a node's geometry or style.",
+      inputSchema: {
+        id: z.string(),
+        x: z.number().optional(),
+        y: z.number().optional(),
+        width: z.number().optional(),
+        height: z.number().optional(),
+        name: z.string().optional(),
+        fill: z.string().optional(),
+        opacity: z.number().optional(),
+        radius: z.number().optional(),
+        visible: z.boolean().optional(),
+        locked: z.boolean().optional(),
+        text: z.string().optional(),
+        fontSize: z.number().optional(),
+      },
+    },
+    async (args) => text(await bridge.call("update_node", args)),
+  );
+
+  server.registerTool(
+    "delete_node",
+    {
+      title: "Delete node",
+      description: "Remove a node and its children.",
+      inputSchema: {
+        id: z.string().optional(),
+        ids: z.array(z.string()).optional().describe("Delete several at once."),
+      },
+    },
+    async (args) => text(await bridge.call("delete_node", args)),
+  );
+
+  server.registerTool(
+    "duplicate_node",
+    {
+      title: "Duplicate node",
+      description: "Copy a node and its children, offset from the original.",
+      inputSchema: {
+        id: z.string().optional(),
+        ids: z.array(z.string()).optional(),
+        offset: z.number().optional().describe("Pixels to offset the copy; default 10."),
+      },
+    },
+    async (args) => text(await bridge.call("duplicate_node", args)),
+  );
+
+  server.registerTool(
+    "set_selection",
+    {
+      title: "Set selection",
+      description: "Select nodes, so the user sees what you are referring to.",
+      inputSchema: { ids: z.array(z.string()) },
+    },
+    async (args) => text(await bridge.call("set_selection", args)),
+  );
+
   return server;
 }
 
