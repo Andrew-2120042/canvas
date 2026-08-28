@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDoc } from "./document/store";
+import { useUi } from "./state/ui";
 import { loadSaved, startAutosave } from "./document/persist";
 import { startMcp, stopMcp } from "./mcp/bridge";
 import { registerReadTools } from "./mcp/readTools";
@@ -21,6 +22,7 @@ import "./App.css";
 
 export default function App() {
   const showDashboard = useDoc((s) => s.showDashboard);
+  const dockLeft = useUi((s) => s.terminalDock === "left" && s.terminalOpen);
   const [ready, setReady] = useState(false);
 
   // Restore before the first paint of real content, then start autosaving.
@@ -57,13 +59,14 @@ export default function App() {
         <Dashboard />
       ) : (
         <>
-          <div className="shell-body">
+          <div className={`shell-body${dockLeft ? " has-left-dock" : ""}`}>
+            {dockLeft && <TerminalDock />}
             <LeftPanel />
             <Toolbar />
             <CanvasRegion />
             <RightPanel />
           </div>
-          <TerminalDock />
+          {!dockLeft && <TerminalDock />}
         </>
       )}
     </div>

@@ -29,6 +29,12 @@ body {
   min-height: 0;
 }
 
+/* Left-docked terminal takes a column of its own ahead of the panels. */
+.shell-body.has-left-dock {
+  grid-template-columns:
+    auto var(--leftpanel-w) var(--toolbar-w) 1fr var(--rightpanel-w);
+}
+
 .tabbar {
   display: flex;
   align-items: center;
@@ -840,19 +846,33 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   background: #242424;
-  border-top: 1px solid var(--border);
 }
+
+.terminal-dock--bottom { border-top: 1px solid var(--border); }
+.terminal-dock--left { border-right: 1px solid var(--border); }
 
 /* A grab strip on the seam, wider than the border it sits on. */
 .terminal-resize {
   position: absolute;
+  z-index: 2;
+}
+
+.terminal-dock--bottom > .terminal-resize {
   top: -3px;
   left: 0;
   right: 0;
   height: 7px;
   cursor: ns-resize;
-  z-index: 2;
+}
+
+.terminal-dock--left > .terminal-resize {
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 7px;
+  cursor: ew-resize;
 }
 
 .terminal-bar {
@@ -886,19 +906,22 @@ body {
   vertical-align: 1px;
 }
 
-.terminal-close {
+.terminal-icon-btn {
+  display: grid;
+  place-items: center;
   width: 20px;
   height: 20px;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--text-dim);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
   cursor: default;
+  flex: 0 0 auto;
 }
 
-.terminal-close:hover { background: var(--bg-row-hover); color: var(--text); }
+.terminal-icon-btn:hover { background: var(--bg-row-hover); color: var(--text); }
 
 .terminal-host {
   flex: 1;
@@ -916,3 +939,62 @@ body {
 .terminal-host .xterm-viewport { background: transparent !important; }
 
 .tab--terminal { margin-right: 6px; }
+
+/* --- selection chips ---------------------------------------------------- */
+
+.selection-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 12px 8px;
+  flex: 0 0 auto;
+}
+
+.selection-tags-label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.selection-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 190px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid #3E4A5C;
+  /* Fully rounded, so a mention reads as a token rather than a button. */
+  border-radius: 11px;
+  background: #2F3846;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: default;
+}
+
+.selection-tag:hover {
+  background: #3A4657;
+  border-color: #2B7FFF;
+}
+
+.selection-tag.is-all {
+  background: transparent;
+  border-style: dashed;
+  color: var(--text-dim);
+}
+
+.selection-tag-icon {
+  display: grid;
+  place-items: center;
+  color: #8FB4FF;
+  flex: 0 0 auto;
+}
+
+.selection-tag-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.selection-tags-more { color: var(--text-dim); font-size: 11px; }

@@ -5,7 +5,14 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { terminalTheme } from "./theme";
 
-const SESSION = "main";
+export const SESSION = "main";
+
+/** The live terminal, so a mention inserted from elsewhere can hand focus
+ *  straight back and the user keeps typing without reaching for the mouse. */
+let active: Terminal | null = null;
+export function focusTerminal(): void {
+  active?.focus();
+}
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 1.35;
 const FONT_FAMILY =
@@ -57,6 +64,7 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
     });
     term.open(host);
     termRef.current = term;
+    active = term;
 
     let disposed = false;
 
@@ -124,6 +132,7 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
       window.removeEventListener("resize", resize);
       unlisteners.forEach((u) => u());
       term.dispose();
+      if (active === term) active = null;
       termRef.current = null;
       // The shell keeps running: closing the panel should not lose the
       // session, and it is torn down with the window.
