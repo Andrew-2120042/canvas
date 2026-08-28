@@ -1,0 +1,37 @@
+import { create } from "zustand";
+
+/** Toolbar order per claude.md. Pen/shader/component/token are inert stubs
+ *  until their phases; they appear in the toolbar from 1.7. */
+export const TOOLS = [
+  "move",
+  "pan",
+  "frame",
+  "rect",
+  "pen",
+  "text",
+  "image",
+  "shader",
+  "component",
+  "token",
+] as const;
+
+export type Tool = (typeof TOOLS)[number];
+
+/** Tools with no behaviour behind them yet — visible but inert. */
+export const STUB_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
+  "pen",
+  "image",
+  "shader",
+  "component",
+  "token",
+]);
+
+interface ToolStore {
+  tool: Tool;
+  setTool: (t: Tool) => void;
+}
+
+export const useTool = create<ToolStore>((set) => ({
+  tool: "move",
+  setTool: (tool) => set({ tool }),
+}));

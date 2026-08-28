@@ -37,7 +37,6 @@
   /* The canvas backdrop is the page fill, not a chrome colour — the
      reference shows this same value in the Page fill swatch. */
   --bg-canvas: #999999;
-  --dot-grid: rgba(0, 0, 0, 0.28);
 
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-size-ui: 12px;

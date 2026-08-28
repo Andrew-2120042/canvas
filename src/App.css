@@ -116,3 +116,52 @@ body {
   color: var(--text-dim);
   font-size: 11px;
 }
+
+/* --- canvas nodes ------------------------------------------------------- */
+
+.scene-node {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+/* Frames read as containers even when empty and unfilled. */
+.scene-node--frame {
+  overflow: visible;
+}
+
+.draft-node {
+  position: absolute;
+  outline: 1px solid #2B7FFF;
+  background: rgba(43, 127, 255, 0.08);
+  pointer-events: none;
+}
+
+/* --- selection ---------------------------------------------------------- */
+
+/* Screen space, so outlines stay 1px and handles 8px at any zoom. */
+.selection-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.selection-box {
+  position: absolute;
+  outline: 1px solid #2B7FFF;
+}
+
+.selection-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  background: #FFFFFF;
+  border: 1px solid #2B7FFF;
+  border-radius: 1px;
+  pointer-events: auto;
+}
+
+.selection-handle[data-handle="nw"], .selection-handle[data-handle="se"] { cursor: nwse-resize; }
+.selection-handle[data-handle="ne"], .selection-handle[data-handle="sw"] { cursor: nesw-resize; }
+.selection-handle[data-handle="n"],  .selection-handle[data-handle="s"]  { cursor: ns-resize; }
+.selection-handle[data-handle="e"],  .selection-handle[data-handle="w"]  { cursor: ew-resize; }

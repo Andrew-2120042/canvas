@@ -1,35 +1,74 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useViewport } from "../state/viewport";
+import { useTool } from "../state/tools";
+import { useDoc } from "../document/store";
 import { useViewportControls } from "../canvas/useViewportControls";
-import { dotGridStyle } from "../canvas/dotGrid";
+import { useCanvasInteraction } from "../canvas/useCanvasInteraction";
+import { SceneNodeView } from "../canvas/SceneNodeView";
+import { SelectionOverlay } from "../canvas/SelectionOverlay";
 
 /**
- * Infinite viewport. The dot grid is painted on this element while content
- * lives in a single transformed layer inside it, so panning and zooming move
- * one compositor layer rather than reflowing anything.
+ * Infinite viewport. Content lives in a single transformed layer, so panning
+ * and zooming move one compositor layer rather than reflowing anything.
  */
 export function CanvasRegion() {
   const ref = useRef<HTMLElement>(null);
   const { spaceHeld, dragging } = useViewportControls(ref);
-  const x = useViewport((s) => s.x);
-  const y = useViewport((s) => s.y);
-  const zoom = useViewport((s) => s.zoom);
+  const { draft } = useCanvasInteraction(ref, spaceHeld);
 
-  const cursor = dragging ? "grabbing" : spaceHeld ? "grab" : "default";
+  const { x, y, zoom } = useViewport();
+  const tool = useTool((s) => s.tool);
+  const page = useDoc((s) => s.doc.pages[s.currentPageId]);
+
+  // Tool shortcuts. The full set arrives with the toolbar in 1.7; these are
+  // the ones needed to exercise the primitives.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || t?.isContentEditable) return;
+      const map: Record<string, "move" | "frame" | "rect"> = {
+        v: "move", f: "frame", r: "rect",
+      };
+      const next = map[e.key.toLowerCase()];
+      if (next) useTool.getState().setTool(next);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const cursor = dragging
+    ? "grabbing"
+    : spaceHeld
+      ? "grab"
+      : tool === "frame" || tool === "rect"
+        ? "crosshair"
+        : "default";
 
   return (
-    <main
-      ref={ref}
-      className="canvas-region"
-      style={{ ...dotGridStyle({ x, y, zoom }), cursor }}
-      tabIndex={-1}
-    >
+    <main ref={ref} className="canvas-region" style={{ cursor }} tabIndex={-1}>
       <div
         className="canvas-content"
         style={{ transform: `translate(${x}px, ${y}px) scale(${zoom})` }}
       >
-        {/* Pages and primitives land here from 1.3 onward. */}
+        {page.children.map((id) => (
+          <SceneNodeView key={id} id={id} />
+        ))}
+
+        {draft && (
+          <div
+            className="draft-node"
+            style={{
+              left: draft.x,
+              top: draft.y,
+              width: draft.width,
+              height: draft.height,
+              outlineWidth: 1 / zoom,
+            }}
+          />
+        )}
       </div>
+
+      <SelectionOverlay />
     </main>
   );
 }
