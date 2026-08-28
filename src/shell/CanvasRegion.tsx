@@ -1,11 +1,13 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useViewport } from "../state/viewport";
 import { SHORTCUTS, useTool } from "../state/tools";
 import { activeFile, useActive } from "../document/store";
 import { useViewportControls } from "../canvas/useViewportControls";
 import { useCanvasInteraction } from "../canvas/useCanvasInteraction";
+import { useKeyboard } from "../canvas/useKeyboard";
 import { SceneNodeView } from "../canvas/SceneNodeView";
 import { SelectionOverlay } from "../canvas/SelectionOverlay";
+import { CommentLayer, type PendingComment } from "../canvas/CommentLayer";
 
 /**
  * Infinite viewport. Content lives in a single transformed layer, so panning
@@ -15,6 +17,8 @@ export function CanvasRegion() {
   const ref = useRef<HTMLElement>(null);
   const { spaceHeld, dragging } = useViewportControls(ref);
   const { draft, marquee } = useCanvasInteraction(ref, spaceHeld);
+  useKeyboard();
+  const [pending, setPending] = useState<PendingComment | null>(null);
 
   const { x, y, zoom } = useViewport();
   const tool = useTool((s) => s.tool);
@@ -37,7 +41,7 @@ export function CanvasRegion() {
     ? "grabbing"
     : spaceHeld || tool === "pan"
       ? "grab"
-      : tool === "frame" || tool === "rect"
+      : tool === "frame" || tool === "rect" || tool === "comment"
         ? "crosshair"
         : tool === "text"
           ? "text"
@@ -47,6 +51,23 @@ export function CanvasRegion() {
     <main
       ref={ref}
       className="canvas-region"
+      onPointerDownCapture={(e) => {
+        if (useTool.getState().tool !== "comment") return;
+        // Never steal a press aimed at an open composer or an existing pin.
+        if ((e.target as HTMLElement).closest(".comment-card, .comment-pin")) return;
+        // With a composer already open, a press outside dismisses it rather
+        // than dropping a second pin on top.
+        if (pending) {
+          setPending(null);
+          return;
+        }
+        const r = ref.current!.getBoundingClientRect();
+        const v = useViewport.getState();
+        setPending({
+          x: (e.clientX - r.left - v.x) / v.zoom,
+          y: (e.clientY - r.top - v.y) / v.zoom,
+        });
+      }}
       /* The backdrop is the page fill, not a chrome colour — the reference
          shows this same value in the Page fill swatch. */
       style={{ cursor, background: page.background }}
@@ -88,6 +109,7 @@ export function CanvasRegion() {
       </div>
 
       <SelectionOverlay />
+      <CommentLayer pending={pending} onCancel={() => setPending(null)} />
     </main>
   );
 }

@@ -188,3 +188,34 @@ export function TokenIcon() {
     </svg>
   );
 }
+
+// --- align -----------------------------------------------------------------
+
+const A = { width: 14, height: 14, viewBox: "0 0 14 14", fill: "none" } as const;
+const line = { stroke: "currentColor", strokeWidth: 1.2 };
+const bar = { fill: "currentColor" };
+
+export function AlignLeftIcon() {
+  return (<svg {...A}><path d="M2 2v10" {...line} /><rect x="4" y="3.5" width="8" height="3" {...bar} /><rect x="4" y="7.5" width="5" height="3" {...bar} /></svg>);
+}
+export function AlignHCenterIcon() {
+  return (<svg {...A}><path d="M7 2v10" {...line} /><rect x="2.5" y="3.5" width="9" height="3" {...bar} /><rect x="4.5" y="7.5" width="5" height="3" {...bar} /></svg>);
+}
+export function AlignRightIcon() {
+  return (<svg {...A}><path d="M12 2v10" {...line} /><rect x="2" y="3.5" width="8" height="3" {...bar} /><rect x="5" y="7.5" width="5" height="3" {...bar} /></svg>);
+}
+export function AlignTopIcon() {
+  return (<svg {...A}><path d="M2 2h10" {...line} /><rect x="3.5" y="4" width="3" height="8" {...bar} /><rect x="7.5" y="4" width="3" height="5" {...bar} /></svg>);
+}
+export function AlignVCenterIcon() {
+  return (<svg {...A}><path d="M2 7h10" {...line} /><rect x="3.5" y="2.5" width="3" height="9" {...bar} /><rect x="7.5" y="4.5" width="3" height="5" {...bar} /></svg>);
+}
+export function AlignBottomIcon() {
+  return (<svg {...A}><path d="M2 12h10" {...line} /><rect x="3.5" y="2" width="3" height="8" {...bar} /><rect x="7.5" y="5" width="3" height="5" {...bar} /></svg>);
+}
+export function DistributeHIcon() {
+  return (<svg {...A}><path d="M2 2v10M12 2v10" {...line} /><rect x="6" y="4" width="2" height="6" {...bar} /></svg>);
+}
+export function DistributeVIcon() {
+  return (<svg {...A}><path d="M2 2h10M2 12h10" {...line} /><rect x="4" y="6" width="6" height="2" {...bar} /></svg>);
+}

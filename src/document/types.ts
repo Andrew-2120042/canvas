@@ -54,6 +54,11 @@ export interface SceneNode {
   innerShadows?: ShadowStyle[];
   filters?: FilterStyle[];
 
+  /** Image nodes: the bitmap as a data URL, plus its intrinsic size. */
+  src?: string;
+  naturalWidth?: number;
+  naturalHeight?: number;
+
   /** Frames only. */
   guides?: GuideStyle;
   clipContent?: boolean;
@@ -71,6 +76,19 @@ export interface SceneNode {
   textStroke?: TextStrokeStyle;
 }
 
+/** A pinned comment thread. Anchored in world space so it tracks the canvas
+ *  through pan and zoom. Single-player for now; authorship and resolution
+ *  across people arrive with multiplayer in Phase 4. */
+export interface Comment {
+  id: string;
+  pageId: PageId;
+  x: number;
+  y: number;
+  body: string;
+  createdAt: number;
+  resolved: boolean;
+}
+
 export interface Page {
   id: PageId;
   name: string;
@@ -83,6 +101,7 @@ export interface Doc {
   nodes: Record<NodeId, SceneNode>;
   pages: Record<PageId, Page>;
   pageOrder: PageId[];
+  comments: Comment[];
 }
 
 let counter = 0;

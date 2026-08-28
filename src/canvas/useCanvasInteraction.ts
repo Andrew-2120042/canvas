@@ -4,6 +4,7 @@ import {
   type Rect,
 } from "../document/store";
 import { useTool } from "../state/tools";
+import { placeImageAt } from "./imageImport";
 import { useViewport } from "../state/viewport";
 import type { HandleKey } from "./SelectionOverlay";
 
@@ -81,6 +82,7 @@ export function useCanvasInteraction(
 
       const tool = useTool.getState().tool;
       if (tool === "pan") return; // the viewport hook owns this gesture
+      if (tool === "comment") return; // the comment layer owns this gesture
       const store = useDoc.getState();
       const af = activeFile();
       const start = toWorld(e);
@@ -96,13 +98,25 @@ export function useCanvasInteraction(
           const origin: Rect = { x: n.x, y: n.y, width: n.width, height: n.height };
           e.preventDefault();
           e.stopPropagation();
+          const gesture = `resize:${id}`;
           drag(e, (w) => {
             useDoc
               .getState()
-              .setNodeRect(id, resizeRect(origin, handle, w.x - start.x, w.y - start.y));
+              .setNodeRect(
+                id,
+                resizeRect(origin, handle, w.x - start.x, w.y - start.y),
+                gesture,
+              );
           });
           return;
         }
+      }
+
+      // --- image import -----------------------------------------------------
+      if (tool === "image") {
+        e.preventDefault();
+        void placeImageAt(start.x, start.y);
+        return;
       }
 
       // --- create ----------------------------------------------------------
@@ -187,11 +201,14 @@ export function useCanvasInteraction(
         );
 
         e.preventDefault();
+        // One key for the whole drag, so it collapses to a single undo step.
+        const gesture = `move:${ids.join(",")}:${Date.now()}`;
         drag(e, (w) => {
           const dx = w.x - start.x;
           const dy = w.y - start.y;
           const st = useDoc.getState();
-          origins.forEach((o, nid) => st.setNodeRect(nid, { x: o.x + dx, y: o.y + dy }));
+          origins.forEach((o, nid) =>
+            st.setNodeRect(nid, { x: o.x + dx, y: o.y + dy }, gesture));
         });
       }
     };

@@ -1,7 +1,11 @@
 import { useActive, useDoc } from "../document/store";
 import type { SceneNode } from "../document/types";
 import { useViewport } from "../state/viewport";
-import { CheckRow, ColorField, NumberField, Section } from "../panels/fields";
+import { CheckRow, ColorField, IconButton, NumberField, Section } from "../panels/fields";
+import {
+  AlignBottomIcon, AlignHCenterIcon, AlignLeftIcon, AlignRightIcon,
+  AlignTopIcon, AlignVCenterIcon, DistributeHIcon, DistributeVIcon,
+} from "../ui/icons";
 import {
   BorderSection, ExportSection, FiltersSection, GuidesSection, OtherStylesSection,
   OutlineSection, RadiusSection, SelectionColoursSection, ShadowSection,
@@ -52,7 +56,39 @@ export function RightPanel() {
         </Section>
       ) : (
         <>
-          <Section title="Layout">
+          <Section
+            title="Layout"
+            action={
+              // Align needs two nodes, distribute needs three.
+              <div className="align-bar">
+                {([
+                  ["left", AlignLeftIcon], ["hcenter", AlignHCenterIcon],
+                  ["right", AlignRightIcon], ["top", AlignTopIcon],
+                  ["vcenter", AlignVCenterIcon], ["bottom", AlignBottomIcon],
+                ] as const).map(([edge, Icon]) => (
+                  <IconButton
+                    key={edge}
+                    title={`Align ${edge}`}
+                    onClick={() => useDoc.getState().align(selection, edge)}
+                  >
+                    <span className={nodes.length < 2 ? "is-disabled" : ""}><Icon /></span>
+                  </IconButton>
+                ))}
+                <IconButton
+                  title="Distribute horizontally"
+                  onClick={() => useDoc.getState().distribute(selection, "h")}
+                >
+                  <span className={nodes.length < 3 ? "is-disabled" : ""}><DistributeHIcon /></span>
+                </IconButton>
+                <IconButton
+                  title="Distribute vertically"
+                  onClick={() => useDoc.getState().distribute(selection, "v")}
+                >
+                  <span className={nodes.length < 3 ? "is-disabled" : ""}><DistributeVIcon /></span>
+                </IconButton>
+              </div>
+            }
+          >
             <div className="field-row">
               <NumberField label="X" value={common(nodes, (n) => n.x)}
                 onCommit={(v) => setAll({ x: v })} />

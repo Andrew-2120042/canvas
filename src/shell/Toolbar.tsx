@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import { STUB_TOOLS, useTool, type Tool } from "../state/tools";
+import { CommentIcon } from "../canvas/CommentLayer";
 import {
   ComponentIcon, MoveIcon, PanIcon, PenIcon, ShaderIcon, TokenIcon,
   ToolFrameIcon, ToolImageIcon, ToolRectIcon, ToolTextIcon,
@@ -13,6 +14,7 @@ const ITEMS: Array<{ tool: Tool; label: string; key?: string; icon: () => ReactE
   { tool: "rect",      label: "Rectangle", key: "R", icon: ToolRectIcon },
   { tool: "pen",       label: "Pen",                 icon: PenIcon },
   { tool: "text",      label: "Text",      key: "T", icon: ToolTextIcon },
+  { tool: "comment",   label: "Comment",   key: "C", icon: CommentIcon },
   { tool: "image",     label: "Image",               icon: ToolImageIcon },
   { tool: "shader",    label: "Shader",              icon: ShaderIcon },
   { tool: "component", label: "Component",           icon: ComponentIcon },
@@ -20,7 +22,7 @@ const ITEMS: Array<{ tool: Tool; label: string; key?: string; icon: () => ReactE
 ];
 
 /** Dividers after Pan and after Text, matching the reference's grouping. */
-const DIVIDER_AFTER = new Set<Tool>(["pan", "text"]);
+const DIVIDER_AFTER = new Set<Tool>(["pan", "comment"]);
 
 export function Toolbar() {
   const tool = useTool((s) => s.tool);

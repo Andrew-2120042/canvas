@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { activeFile } from "../document/store";
 import { useTool } from "../state/tools";
 import { useViewport } from "../state/viewport";
 
@@ -70,6 +71,9 @@ export function useViewportControls(ref: RefObject<HTMLElement | null>) {
         e.preventDefault();
         return;
       }
+
+      // With a selection, arrows nudge the nodes instead — see useKeyboard.
+      if (activeFile().selection.length > 0 && e.key.startsWith("Arrow")) return;
 
       const step = e.shiftKey ? ARROW_STEP_LARGE : ARROW_STEP;
       switch (e.key) {

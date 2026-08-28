@@ -43,6 +43,7 @@ export function SceneNodeView({ id }: { id: NodeId }) {
   if (!node || !node.visible) return null;
 
   const isText = node.type === "text";
+  const isImage = node.type === "image";
 
   /** Leave edit mode; the effect cleanup performs the actual write. */
   const endEditing = () => useDoc.getState().setEditing(null);
@@ -58,7 +59,11 @@ export function SceneNodeView({ id }: { id: NodeId }) {
         width: node.width,
         height: isText ? undefined : node.height,
         minHeight: isText ? node.height : undefined,
-        background: isText ? "transparent" : rgba(node.fill, 1),
+        background: isText
+          ? "transparent"
+          : isImage && node.src
+            ? `url(${node.src}) center/cover no-repeat`
+            : rgba(node.fill, 1),
         color: isText ? node.fill : undefined,
         opacity: node.opacity,
         borderRadius: node.radius || undefined,
