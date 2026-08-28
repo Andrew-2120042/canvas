@@ -16,6 +16,7 @@ import { Toolbar } from "./shell/Toolbar";
 import { CanvasRegion } from "./shell/CanvasRegion";
 import { RightPanel } from "./shell/RightPanel";
 import { Dashboard } from "./shell/Dashboard";
+import { TerminalDock } from "./terminal/TerminalDock";
 import "./App.css";
 
 export default function App() {
@@ -55,12 +56,15 @@ export default function App() {
       {showDashboard ? (
         <Dashboard />
       ) : (
-        <div className="shell-body">
-          <LeftPanel />
-          <Toolbar />
-          <CanvasRegion />
-          <RightPanel />
-        </div>
+        <>
+          <div className="shell-body">
+            <LeftPanel />
+            <Toolbar />
+            <CanvasRegion />
+            <RightPanel />
+          </div>
+          <TerminalDock />
+        </>
       )}
     </div>
   );

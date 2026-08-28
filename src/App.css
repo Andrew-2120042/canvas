@@ -15,10 +15,10 @@ body {
   user-select: none;
 }
 
-/* Shell: tab bar across the top, three panels beneath. */
+/* Shell: tab bar across the top, three panels beneath, terminal below. */
 .shell {
   display: grid;
-  grid-template-rows: var(--tabbar-h) 1fr;
+  grid-template-rows: var(--tabbar-h) 1fr auto;
   height: 100%;
 }
 
@@ -832,3 +832,87 @@ body {
   background: #2B7FFF;
   border-radius: 50%;
 }
+
+/* --- embedded terminal -------------------------------------------------- */
+
+.terminal-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #242424;
+  border-top: 1px solid var(--border);
+}
+
+/* A grab strip on the seam, wider than the border it sits on. */
+.terminal-resize {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 2;
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 10px 0 14px;
+  flex: 0 0 auto;
+}
+
+.terminal-title {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.terminal-status {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.terminal-status.is-ready::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #2F8F5B;
+  vertical-align: 1px;
+}
+
+.terminal-close {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: default;
+}
+
+.terminal-close:hover { background: var(--bg-row-hover); color: var(--text); }
+
+.terminal-host {
+  flex: 1;
+  /* Both are load-bearing. Without them this flex item cannot shrink below
+     its content, so xterm's rendered width defines the panel's width — and
+     the measured box feeds back into the column count, each resize making it
+     wider than the last. */
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 12px 10px;
+}
+
+/* xterm draws its own scrollbar track; keep it out of the panel's chrome. */
+.terminal-host .xterm-viewport { background: transparent !important; }
+
+.tab--terminal { margin-right: 6px; }

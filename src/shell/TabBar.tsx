@@ -1,6 +1,17 @@
 import { useDoc } from "../document/store";
+import { useUi } from "../state/ui";
 import { useViewport } from "../state/viewport";
 import { PageIcon, PlusIcon } from "../ui/icons";
+
+/** Prompt glyph for the agent terminal toggle. */
+function TerminalGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+         stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+      <path d="M3 4.5 5.5 7 3 9.5M7.5 10h3.5" />
+    </svg>
+  );
+}
 
 /** Grid glyph for the Dashboard tab. */
 function GridIcon() {
@@ -26,6 +37,7 @@ export function TabBar() {
   const fileOrder = useDoc((s) => s.fileOrder);
   const activeFileId = useDoc((s) => s.activeFileId);
   const showDashboard = useDoc((s) => s.showDashboard);
+  const terminalOpen = useUi((s) => s.terminalOpen);
 
   /** Each file keeps its own viewport, so hand the current one back before
    *  leaving and restore the incoming file's on arrival. */
@@ -80,6 +92,15 @@ export function TabBar() {
       </button>
 
       <div className="tabbar-drag" data-tauri-drag-region />
+
+      <button
+        className={`tab tab--terminal${terminalOpen ? " is-active" : ""}`}
+        title="Agent terminal  ⌘J"
+        onClick={() => useUi.getState().toggleTerminal()}
+      >
+        <TerminalGlyph />
+        <span>Agent</span>
+      </button>
     </div>
   );
 }

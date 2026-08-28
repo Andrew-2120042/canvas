@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { activeFile, useDoc } from "../document/store";
+import { useUi } from "../state/ui";
 import type { SceneNode } from "../document/types";
 
 const NUDGE = 1;
@@ -44,6 +45,14 @@ function reid(set: SceneNode[]): SceneNode[] {
 export function useKeyboard() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // The terminal toggle works even while typing elsewhere — it is a
+      // window-level command, not a canvas one.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        useUi.getState().toggleTerminal();
+        return;
+      }
+
       const f = activeFile();
       if (isTyping(e.target) || f.editingId) return;
 

@@ -1,7 +1,9 @@
 mod mcp;
+mod pty;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use mcp::McpState;
+use pty::PtyState;
 use tauri::Manager;
 
 /// Read a user-picked image and hand it back as a data URL.
@@ -39,6 +41,7 @@ fn read_image_data_url(path: String) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(McpState::default())
+        .manage(PtyState::default())
         .plugin(tauri_plugin_opener::init())
         // Local document persistence writes into the app data directory.
         .plugin(tauri_plugin_fs::init())
@@ -49,11 +52,16 @@ pub fn run() {
             mcp::start_mcp_server,
             mcp::stop_mcp_server,
             mcp::mcp_port,
+            pty::pty_spawn,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_kill,
         ])
         .on_window_event(|window, event| {
             // The sidecar is a child of this app, not a background service.
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window.state::<McpState>().shutdown();
+                window.state::<PtyState>().shutdown();
             }
         })
         .run(tauri::generate_context!())
