@@ -1,0 +1,40 @@
+name: build
+
+# Phase 1 acceptance requires the shell to boot on Mac *and* Windows.
+# Development happens on macOS, so Windows is verified here rather than claimed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - run: npm ci
+
+      - name: Typecheck and build frontend
+        run: npm run build
+
+      - name: Build Tauri app
+        run: npm run tauri build -- --no-bundle

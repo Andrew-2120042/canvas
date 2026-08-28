@@ -1,0 +1,76 @@
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--font-size-ui);
+  color: var(--text);
+  background: var(--bg-chrome);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Shell: tab bar across the top, three panels beneath. */
+.shell {
+  display: grid;
+  grid-template-rows: var(--tabbar-h) 1fr;
+  height: 100%;
+}
+
+.shell-body {
+  display: grid;
+  grid-template-columns: var(--leftpanel-w) 1fr var(--rightpanel-w);
+  min-height: 0;
+}
+
+.tabbar {
+  display: flex;
+  align-items: center;
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border);
+}
+
+.left-panel {
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.right-panel {
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Canvas region holds the floating toolbar over the viewport. */
+.canvas-region {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-canvas);
+  overflow: hidden;
+}
+
+.toolbar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: var(--toolbar-w);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+/* Placeholder marker for empty regions — removed as each is built out. */
+.region-stub {
+  padding: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
