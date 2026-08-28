@@ -371,3 +371,37 @@ export function ExportSection() {
     </Section>
   );
 }
+
+/** Stroke width and colour for a vector path. */
+export function PathStrokeSection({ node, patch }: { node: SceneNode; patch: Patch }) {
+  return (
+    <Section title="Stroke">
+      <div className="field-row">
+        <NumberField
+          label="≡"
+          value={node.strokeWidth ?? 2}
+          onCommit={(v) => patch({ strokeWidth: Math.max(0, v) })}
+        />
+      </div>
+      <ColorField
+        value={node.strokeColor ?? "#222222"}
+        opacity={node.strokeOpacity ?? 1}
+        onCommit={(c) => patch({ strokeColor: c })}
+        onOpacityCommit={(a) => patch({ strokeOpacity: a })}
+      />
+    </Section>
+  );
+}
+
+/** Closed/open toggle — a closed path takes a fill, an open one does not. */
+export function PathShapeSection({ node, patch }: { node: SceneNode; patch: Patch }) {
+  return (
+    <Section title="Path">
+      <CheckRow
+        checked={!!node.closed}
+        label="Closed"
+        onToggle={() => patch({ closed: !node.closed })}
+      />
+    </Section>
+  );
+}

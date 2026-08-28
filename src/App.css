@@ -784,3 +784,51 @@ body {
 
 .comment-btn.is-primary { background: #4A4A4A; }
 .comment-btn:hover { background: #4A4A4A; }
+
+/* --- paths -------------------------------------------------------------- */
+
+.path-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* Screen-space overlay for the in-progress path. */
+.pen-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.path-edit-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.path-anchor,
+.path-handle {
+  position: absolute;
+  pointer-events: auto;
+  cursor: default;
+}
+
+.path-anchor {
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  background: #FFFFFF;
+  border: 1.5px solid #2B7FFF;
+  border-radius: 2px;
+}
+
+.path-handle {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  background: #2B7FFF;
+  border-radius: 50%;
+}

@@ -20,7 +20,6 @@ export type Tool = (typeof TOOLS)[number];
 
 /** Tools with no behaviour behind them yet — visible but inert. */
 export const STUB_TOOLS: ReadonlySet<Tool> = new Set<Tool>([
-  "pen",
   "shader",
   "component",
   "token",
@@ -44,4 +43,5 @@ export const SHORTCUTS: Record<string, Tool> = {
   r: "rect",
   t: "text",
   c: "comment",
+  p: "pen",
 };

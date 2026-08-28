@@ -8,8 +8,9 @@ import {
 } from "../ui/icons";
 import {
   BorderSection, ExportSection, FiltersSection, GuidesSection, OtherStylesSection,
-  OutlineSection, RadiusSection, SelectionColoursSection, ShadowSection,
-  TextSection, TextStrokeSection, UnderlineSection,
+  OutlineSection, PathShapeSection, PathStrokeSection, RadiusSection,
+  SelectionColoursSection, ShadowSection, TextSection, TextStrokeSection,
+  UnderlineSection,
 } from "../panels/sections";
 
 /** Shared value across a multi-selection, or null when they disagree. */
@@ -103,7 +104,7 @@ export function RightPanel() {
             </div>
           </Section>
 
-          {nodes[0].type !== "text" && (
+          {nodes[0].type !== "text" && nodes[0].type !== "path" && (
             <RadiusSection node={nodes[0]} patch={(p) => setAll(p)} />
           )}
 
@@ -146,9 +147,18 @@ export function RightPanel() {
             const patch = (p: Partial<SceneNode>) => setAll(p);
             const isText = n.type === "text";
             const isFrame = n.type === "frame";
+            const isPath = n.type === "path";
             return (
               <>
-                {isText ? (
+                {isPath ? (
+                  <>
+                    <PathShapeSection node={n} patch={patch} />
+                    <PathStrokeSection node={n} patch={patch} />
+                    <ShadowSection node={n} patch={patch} title="Shadow"
+                      field="shadows" withSpread />
+                    <FiltersSection node={n} patch={patch} />
+                  </>
+                ) : isText ? (
                   <>
                     <TextSection node={n} patch={patch} />
                     <UnderlineSection node={n} patch={patch} />

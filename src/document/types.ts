@@ -20,7 +20,22 @@ import type {
 export type NodeId = string;
 export type PageId = string;
 
-export type NodeType = "frame" | "rect" | "text" | "image";
+export type NodeType = "frame" | "rect" | "text" | "image" | "path";
+
+/**
+ * One anchor on a vector path. Coordinates are relative to the node origin.
+ * `in`/`out` are control-handle offsets *from the anchor*, so moving an
+ * anchor carries its handles without touching them.
+ * A handle of null makes that side a corner.
+ */
+export interface PathPoint {
+  x: number;
+  y: number;
+  inX: number | null;
+  inY: number | null;
+  outX: number | null;
+  outY: number | null;
+}
 
 export interface SceneNode {
   id: NodeId;
@@ -53,6 +68,13 @@ export interface SceneNode {
   shadows?: ShadowStyle[];
   innerShadows?: ShadowStyle[];
   filters?: FilterStyle[];
+
+  /** Path nodes: anchors in node-local space. */
+  points?: PathPoint[];
+  closed?: boolean;
+  strokeWidth?: number;
+  strokeColor?: string;
+  strokeOpacity?: number;
 
   /** Image nodes: the bitmap as a data URL, plus its intrinsic size. */
   src?: string;
@@ -127,9 +149,22 @@ export function createNode(
     visible: true,
     locked: false,
     // For text, `fill` is the glyph colour and the box stays transparent.
-    fill: type === "frame" ? "#FFFFFF" : type === "text" ? "#222222" : "#D9D9D9",
+    // A freshly drawn path is a stroke, not a filled shape.
+    fill: type === "frame" ? "#FFFFFF"
+      : type === "text" ? "#222222"
+      : type === "path" ? "transparent"
+      : "#D9D9D9",
     opacity: 1,
     radius: 0,
+    ...(type === "path"
+      ? {
+          points: [],
+          closed: false,
+          strokeWidth: 2,
+          strokeColor: "#222222",
+          strokeOpacity: 1,
+        }
+      : {}),
     ...(type === "text"
       ? {
           text: "Text",
@@ -150,5 +185,6 @@ function defaultName(type: NodeType): string {
     case "rect":  return "Rectangle";
     case "text":  return "Text";
     case "image": return "Image";
+    case "path":  return "Path";
   }
 }

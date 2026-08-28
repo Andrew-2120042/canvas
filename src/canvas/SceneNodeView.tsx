@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useActive, useDoc } from "../document/store";
 import { nodeCss, rgba } from "../document/style";
+import { PathView } from "./PathView";
 import type { NodeId } from "../document/types";
 
 /**
@@ -9,7 +10,7 @@ import type { NodeId } from "../document/types";
  */
 export function SceneNodeView({ id }: { id: NodeId }) {
   const node = useActive((f) => f.doc.nodes[id]);
-  const editing = useActive((f) => f.editingId === id);
+  const editing = useActive((f) => f.editingId === id) && node?.type === "text";
   const editorRef = useRef<HTMLDivElement>(null);
   /** Latest typed value, mirrored on every input. */
   const pending = useRef<string | null>(null);
@@ -44,6 +45,7 @@ export function SceneNodeView({ id }: { id: NodeId }) {
 
   const isText = node.type === "text";
   const isImage = node.type === "image";
+  const isPath = node.type === "path";
 
   /** Leave edit mode; the effect cleanup performs the actual write. */
   const endEditing = () => useDoc.getState().setEditing(null);
@@ -59,7 +61,7 @@ export function SceneNodeView({ id }: { id: NodeId }) {
         width: node.width,
         height: isText ? undefined : node.height,
         minHeight: isText ? node.height : undefined,
-        background: isText
+        background: isText || isPath
           ? "transparent"
           : isImage && node.src
             ? `url(${node.src}) center/cover no-repeat`
@@ -81,6 +83,8 @@ export function SceneNodeView({ id }: { id: NodeId }) {
           }}
         />
       )}
+      {isPath && <PathView node={node} />}
+
       {isText &&
         (editing ? (
           <div

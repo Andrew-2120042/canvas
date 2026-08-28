@@ -9,6 +9,8 @@ import { useViewport } from "../state/viewport";
 import type { HandleKey } from "./SelectionOverlay";
 
 const MIN_SIZE = 1;
+/** Two presses on the same node inside this window count as a double-click. */
+const DOUBLE_MS = 350;
 /** Below this drag distance a frame-tool press counts as a click. */
 const CLICK_SLOP = 3;
 const DEFAULT_SIZE: Record<string, { width: number; height: number }> = {
@@ -54,6 +56,9 @@ function resizeRect(start: Rect, handle: HandleKey, dx: number, dy: number): Rec
  * Panning is owned by useViewportControls; this hook ignores middle-click and
  * space-held presses so the two never fight over the same gesture.
  */
+/** Last press, for detecting a double-click without the native event. */
+let lastPress: { id: string | null; at: number } = { id: null, at: 0 };
+
 export function useCanvasInteraction(
   ref: RefObject<HTMLElement | null>,
   spaceHeld: boolean,
@@ -76,13 +81,18 @@ export function useCanvasInteraction(
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0 || spaceHeld) return;
-      // This native listener runs before React's synthetic handlers, so the
-      // editor cannot stop it from starting a drag — bail out here instead.
-      if ((e.target as HTMLElement).closest(".text-editor")) return;
+      // This native listener runs before React's synthetic handlers, so an
+      // overlay cannot stop it from starting a drag or clearing the selection
+      // — bail out here instead. Without this, pressing a path anchor reads as
+      // an empty-canvas click and unmounts the very overlay being dragged.
+      if ((e.target as HTMLElement).closest(
+        ".text-editor, .path-edit-overlay, .comment-layer",
+      )) return;
 
       const tool = useTool.getState().tool;
       if (tool === "pan") return; // the viewport hook owns this gesture
       if (tool === "comment") return; // the comment layer owns this gesture
+      if (tool === "pen") return; // the pen tool owns this gesture
       const store = useDoc.getState();
       const af = activeFile();
       const start = toWorld(e);
@@ -157,6 +167,28 @@ export function useCanvasInteraction(
       // --- select and move -------------------------------------------------
       if (tool === "move") {
         const nodeEl = target.closest("[data-node-id]") as HTMLElement | null;
+
+        // Detected here rather than from a `dblclick` event: the move branch
+        // calls preventDefault to start dragging, which suppresses the
+        // browser's synthesised click/dblclick pair.
+        if (nodeEl) {
+          const hit = nodeEl.dataset.nodeId!;
+          const now = Date.now();
+          if (lastPress.id === hit && now - lastPress.at < DOUBLE_MS) {
+            lastPress = { id: null, at: 0 };
+            const n = af.doc.nodes[hit];
+            if (n && !n.locked && (n.type === "text" || n.type === "path")) {
+              e.preventDefault();
+              store.select([hit]);
+              store.setEditing(hit);
+              return;
+            }
+          }
+          lastPress = { id: hit, at: now };
+        } else {
+          lastPress = { id: null, at: 0 };
+        }
+
         if (!nodeEl) {
           // Empty canvas: rubber-band select. Additive with shift held, so an
           // existing selection can be extended rather than replaced.
@@ -239,26 +271,8 @@ export function useCanvasInteraction(
       elm.addEventListener("pointercancel", up);
     }
 
-    /** Double-click a text node to edit it in place. */
-    const onDoubleClick = (e: MouseEvent) => {
-      const nodeEl = (e.target as HTMLElement).closest(
-        "[data-node-id]",
-      ) as HTMLElement | null;
-      if (!nodeEl) return;
-      const id = nodeEl.dataset.nodeId!;
-      const n = activeFile().doc.nodes[id];
-      if (n?.type !== "text" || n.locked) return;
-      e.preventDefault();
-      useDoc.getState().select([id]);
-      useDoc.getState().setEditing(id);
-    };
-
     el.addEventListener("pointerdown", onPointerDown);
-    el.addEventListener("dblclick", onDoubleClick);
-    return () => {
-      el.removeEventListener("pointerdown", onPointerDown);
-      el.removeEventListener("dblclick", onDoubleClick);
-    };
+    return () => el.removeEventListener("pointerdown", onPointerDown);
   }, [ref, spaceHeld]);
 
   return { draft, marquee };

@@ -1,8 +1,10 @@
 import { create } from "zustand";
 import {
   createNode, newId,
-  type Comment, type Doc, type NodeId, type NodeType, type PageId, type SceneNode,
+  type Comment, type Doc, type NodeId, type NodeType, type PageId,
+  type PathPoint, type SceneNode,
 } from "./types";
+import { normalise, pathBounds } from "../canvas/pathGeometry";
 
 export interface Rect {
   x: number;
@@ -77,6 +79,9 @@ interface DocStore {
   setNodeRect: (id: NodeId, rect: Partial<Rect>, key?: string) => void;
   updateNode: (id: NodeId, patch: Partial<SceneNode>, key?: string) => void;
   removeNodes: (ids: NodeId[]) => void;
+
+  /** Move one anchor (or its handle) and refit the node's box around it. */
+  updatePathPoint: (id: NodeId, index: number, patch: Partial<PathPoint>, key?: string) => void;
 
   // comments
   addComment: (pageId: PageId, x: number, y: number, body: string) => void;
@@ -346,6 +351,29 @@ export const useDoc = create<DocStore>((set, get) => {
 
     setEditing: (editingId) =>
       edit((f) => { f.editingId = editingId; return f; }, { history: false }),
+
+    updatePathPoint: (id, index, patch, key) =>
+      edit((f) => {
+        const n = f.doc.nodes[id];
+        if (!n?.points?.[index]) return f;
+        const moved = n.points.map((p, i) => (i === index ? { ...p, ...patch } : p));
+        // Anchors are node-local, so a point dragged past an edge must shift
+        // the box and rebase every point rather than escape the bounds.
+        const b = pathBounds(moved);
+        const { points } = normalise(moved);
+        f.doc = {
+          ...f.doc,
+          nodes: {
+            ...f.doc.nodes,
+            [id]: {
+              ...n, points,
+              x: n.x + b.x, y: n.y + b.y,
+              width: Math.max(b.width, 1), height: Math.max(b.height, 1),
+            },
+          },
+        };
+        return f;
+      }, { key }),
 
     // --- comments ---------------------------------------------------------
 

@@ -8,6 +8,9 @@ import { useKeyboard } from "../canvas/useKeyboard";
 import { SceneNodeView } from "../canvas/SceneNodeView";
 import { SelectionOverlay } from "../canvas/SelectionOverlay";
 import { CommentLayer, type PendingComment } from "../canvas/CommentLayer";
+import { usePenTool } from "../canvas/usePenTool";
+import { PenPreview } from "../canvas/PenPreview";
+import { PathEditOverlay } from "../canvas/PathEditOverlay";
 
 /**
  * Infinite viewport. Content lives in a single transformed layer, so panning
@@ -19,6 +22,7 @@ export function CanvasRegion() {
   const { draft, marquee } = useCanvasInteraction(ref, spaceHeld);
   useKeyboard();
   const [pending, setPending] = useState<PendingComment | null>(null);
+  const penDraft = usePenTool(ref);
 
   const { x, y, zoom } = useViewport();
   const tool = useTool((s) => s.tool);
@@ -41,7 +45,7 @@ export function CanvasRegion() {
     ? "grabbing"
     : spaceHeld || tool === "pan"
       ? "grab"
-      : tool === "frame" || tool === "rect" || tool === "comment"
+      : tool === "frame" || tool === "rect" || tool === "comment" || tool === "pen"
         ? "crosshair"
         : tool === "text"
           ? "text"
@@ -108,6 +112,8 @@ export function CanvasRegion() {
         )}
       </div>
 
+      <PenPreview draft={penDraft} />
+      <PathEditOverlay />
       <SelectionOverlay />
       <CommentLayer pending={pending} onCancel={() => setPending(null)} />
     </main>
