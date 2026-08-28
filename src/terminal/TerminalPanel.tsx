@@ -110,7 +110,10 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
       }
       if (disposed) return;
       tryFit();
-      await invoke("pty_spawn", { id: SESSION, cols: term.cols, rows: term.rows });
+      // Start in the workspace rather than wherever the app happens to be,
+      // so the agent has a sensible place to work.
+      const cwd = await invoke<string>("workspace_dir").catch(() => undefined);
+      await invoke("pty_spawn", { id: SESSION, cols: term.cols, rows: term.rows, cwd });
       onReady?.();
     })();
 

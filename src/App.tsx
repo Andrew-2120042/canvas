@@ -22,7 +22,7 @@ import "./App.css";
 
 export default function App() {
   const showDashboard = useDoc((s) => s.showDashboard);
-  const dockLeft = useUi((s) => s.terminalDock === "left" && s.terminalOpen);
+  const dockSide = useUi((s) => s.terminalDock === "right" && s.terminalOpen);
   const [ready, setReady] = useState(false);
 
   // Restore before the first paint of real content, then start autosaving.
@@ -59,14 +59,14 @@ export default function App() {
         <Dashboard />
       ) : (
         <>
-          <div className={`shell-body${dockLeft ? " has-left-dock" : ""}`}>
-            {dockLeft && <TerminalDock />}
+          <div className={`shell-body${dockSide ? " has-side-dock" : ""}`}>
             <LeftPanel />
             <Toolbar />
             <CanvasRegion />
             <RightPanel />
+            {dockSide && <TerminalDock />}
           </div>
-          {!dockLeft && <TerminalDock />}
+          {!dockSide && <TerminalDock />}
         </>
       )}
     </div>

@@ -29,10 +29,10 @@ body {
   min-height: 0;
 }
 
-/* Left-docked terminal takes a column of its own ahead of the panels. */
-.shell-body.has-left-dock {
+/* Side-docked terminal takes a column of its own, outside the panels. */
+.shell-body.has-side-dock {
   grid-template-columns:
-    auto var(--leftpanel-w) var(--toolbar-w) 1fr var(--rightpanel-w);
+    var(--leftpanel-w) var(--toolbar-w) 1fr var(--rightpanel-w) auto;
 }
 
 .tabbar {
@@ -851,7 +851,7 @@ body {
 }
 
 .terminal-dock--bottom { border-top: 1px solid var(--border); }
-.terminal-dock--left { border-right: 1px solid var(--border); }
+.terminal-dock--right { border-left: 1px solid var(--border); }
 
 /* A grab strip on the seam, wider than the border it sits on. */
 .terminal-resize {
@@ -867,10 +867,10 @@ body {
   cursor: ns-resize;
 }
 
-.terminal-dock--left > .terminal-resize {
+.terminal-dock--right > .terminal-resize {
   top: 0;
   bottom: 0;
-  right: -3px;
+  left: -3px;
   width: 7px;
   cursor: ew-resize;
 }

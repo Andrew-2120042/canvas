@@ -34,6 +34,28 @@ fn default_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
 }
 
+/// Where the agent starts.
+///
+/// Not the home directory: an agent launched there is pointed at everything
+/// the user owns, and Claude Code will rightly ask whether the folder is
+/// trusted. A dedicated workspace keeps the blast radius small and gives the
+/// agent somewhere sensible to write files that belong to the design.
+#[tauri::command]
+pub fn workspace_dir() -> Result<String, String> {
+    let base = if cfg!(debug_assertions) {
+        // In development, work in the repository this app is built from.
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or("no parent directory")?
+    } else {
+        let home = std::env::var("HOME").map_err(|_| "no HOME directory")?;
+        std::path::Path::new(&home).join("Canvas")
+    };
+    std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    Ok(base.display().to_string())
+}
+
 #[tauri::command]
 pub fn pty_spawn(
     app: AppHandle,

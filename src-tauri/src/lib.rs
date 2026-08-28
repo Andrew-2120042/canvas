@@ -1,3 +1,4 @@
+mod agent_config;
 mod mcp;
 mod pty;
 
@@ -56,6 +57,7 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            pty::workspace_dir,
         ])
         .on_window_event(|window, event| {
             // The sidecar is a child of this app, not a background service.

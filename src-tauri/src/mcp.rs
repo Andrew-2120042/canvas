@@ -11,10 +11,22 @@ pub struct McpState {
     port: Mutex<Option<u16>>,
 }
 
-/// Ask the OS for a free loopback port, then hand it to the server. Binding
-/// and immediately releasing leaves a small race, but it beats a hardcoded
-/// port that collides with whatever else the user is running.
-fn free_port() -> Result<u16, String> {
+/// The port the agent config points at. Preferred rather than fixed: a stable
+/// port keeps the written config valid across restarts, so the user's agent
+/// is not reconfigured on every launch and an entry left behind by a crash
+/// still points somewhere correct.
+const PREFERRED_PORT: u16 = 4319;
+
+fn port_is_free(port: u16) -> bool {
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+/// Prefer the stable port; fall back to whatever the OS offers if something
+/// else already holds it.
+fn choose_port() -> Result<u16, String> {
+    if port_is_free(PREFERRED_PORT) {
+        return Ok(PREFERRED_PORT);
+    }
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     drop(listener);
@@ -36,7 +48,7 @@ pub fn start_mcp_server(state: tauri::State<'_, McpState>) -> Result<u16, String
         return Ok(port); // already running
     }
 
-    let port = free_port()?;
+    let port = choose_port()?;
     let entry = server_entry();
     if !entry.exists() {
         return Err(format!("MCP server not found at {}", entry.display()));
@@ -77,6 +89,14 @@ pub fn start_mcp_server(state: tauri::State<'_, McpState>) -> Result<u16, String
 
     *state.child.lock().unwrap() = Some(child);
     *state.port.lock().unwrap() = Some(port);
+
+    // Point the user's agent at this server now, so the connection exists
+    // before they ever open the terminal — there is no setup step to perform.
+    match crate::agent_config::configure_agent(port) {
+        Ok(path) => eprintln!("[mcp] agent config updated at {path}"),
+        Err(e) => eprintln!("[mcp] could not update the agent config: {e}"),
+    }
+
     Ok(port)
 }
 

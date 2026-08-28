@@ -9,10 +9,11 @@ interface UiStore {
   /** Embedded agent terminal panel. */
   terminalOpen: boolean;
   toggleTerminal: () => void;
-  /** Where the panel lives. Bottom suits watching a build; left suits
-   *  holding a conversation beside the canvas. */
-  terminalDock: "bottom" | "left";
-  setTerminalDock: (d: "bottom" | "left") => void;
+  /** Where the panel lives. Bottom suits watching a build run; right suits
+   *  holding a conversation beside the canvas, next to the properties it
+   *  talks about. */
+  terminalDock: "bottom" | "right";
+  setTerminalDock: (d: "bottom" | "right") => void;
   terminalHeight: number;
   setTerminalHeight: (h: number) => void;
   terminalWidth: number;
