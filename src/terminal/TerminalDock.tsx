@@ -4,6 +4,7 @@ import { useUi } from "../state/ui";
 import { TerminalPanel, SESSION } from "./TerminalPanel";
 import { SelectionTags } from "./SelectionTags";
 import { AgentPanel } from "../agent/AgentPanel";
+import { useAgent } from "../agent/session";
 
 function DockBottomIcon() {
   return (
@@ -44,6 +45,12 @@ export function TerminalDock() {
   const [metrics, setMetrics] = useState("");
   const [cwd, setCwd] = useState("");
   const dragging = useRef(false);
+  const sessionId = useAgent((s) => s.sessionId);
+  const hasConversation = useAgent((s) => s.hasConversation);
+  const reload = useAgent((s) => s.reload);
+  /** Set while the terminal holds the conversation, so returning to the
+   *  panel picks up whatever happened there. */
+  const handedOff = useRef(false);
 
   const onReady = useCallback(() => setReady(true), []);
   const onMetrics = useCallback((m: string) => setMetrics(m), []);
@@ -51,6 +58,40 @@ export function TerminalDock() {
   useEffect(() => {
     void invoke<string>("workspace_dir").then(setCwd).catch(() => setCwd(""));
   }, []);
+
+  /**
+   * Carry a command into the terminal on the same conversation.
+   *
+   * The panel and the terminal are separate processes and cannot share one,
+   * but they can share a *conversation*: the agent runs under an id this app
+   * owns, and the terminal resumes that id. So the interactive session opens
+   * knowing everything said in the panel, and anything done there is waiting
+   * when you come back.
+   */
+  const handoff = (command: string) => {
+    handedOff.current = true;
+    setMode("terminal");
+    // Resuming a conversation that was never started fails outright, so open
+    // the session under this id instead — either way both surfaces share it.
+    const line = hasConversation
+      ? `claude --resume ${sessionId}\n`
+      : `claude --session-id ${sessionId}\n`;
+    void invoke("pty_write", { id: SESSION, data: line }).then(() => {
+      // Give the session a moment to come up before offering the command.
+      setTimeout(() => {
+        void invoke("pty_write", { id: SESSION, data: command }).catch(() => {});
+      }, 2500);
+    }).catch(() => {});
+  };
+
+  /** Returning to the panel after a handoff reloads the conversation. */
+  const showAgent = () => {
+    setMode("agent");
+    if (handedOff.current && cwd) {
+      handedOff.current = false;
+      void reload(cwd);
+    }
+  };
 
   if (!open) return null;
   const isSide = dock === "right";
@@ -86,7 +127,7 @@ export function TerminalDock() {
         <div className="dock-tabs">
           <button
             className={`dock-tab${mode === "agent" ? " is-active" : ""}`}
-            onClick={() => setMode("agent")}
+            onClick={showAgent}
           >
             Agent
           </button>
@@ -115,7 +156,7 @@ export function TerminalDock() {
       {/* The pty stays mounted while hidden: switching tabs must not kill a
           running shell or lose its scrollback. */}
       <div className="dock-surface" hidden={mode !== "agent"}>
-        {cwd && <AgentPanel cwd={cwd} />}
+        {cwd && <AgentPanel cwd={cwd} onHandoff={handoff} />}
       </div>
       <div className="dock-surface" hidden={mode !== "terminal"}>
         <SelectionTags sessionId={SESSION} />

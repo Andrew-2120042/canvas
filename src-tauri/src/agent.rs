@@ -52,12 +52,20 @@ const ALLOWED_TOOLS: &str = concat!(
     "mcp__canvas__set_selection"
 );
 
+/// Start the headless agent.
+///
+/// `session_id` is the conversation id, held by the app rather than left to
+/// the agent, so the same conversation can be picked up elsewhere — the
+/// terminal resumes this id to get an interactive view of it. `resume` says
+/// whether that conversation already exists.
 #[tauri::command]
 pub fn agent_start(
     app: AppHandle,
     state: tauri::State<'_, AgentState>,
     id: String,
     cwd: String,
+    session_id: String,
+    resume: bool,
 ) -> Result<(), String> {
     // Reattaching to a session that outlived a window reload: replay what the
     // panel needs to render its header rather than starting a second agent.
@@ -68,15 +76,22 @@ pub fn agent_start(
         return Ok(());
     }
 
-    let mut child = Command::new("claude")
-        .args([
-            "-p",
-            "--input-format", "stream-json",
-            "--output-format", "stream-json",
-            "--verbose",
-            "--include-partial-messages",
-            "--allowedTools", ALLOWED_TOOLS,
-        ])
+    let mut cmd = Command::new("claude");
+    cmd.args([
+        "-p",
+        "--input-format", "stream-json",
+        "--output-format", "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--allowedTools", ALLOWED_TOOLS,
+    ]);
+    if resume {
+        cmd.args(["--resume", &session_id]);
+    } else {
+        cmd.args(["--session-id", &session_id]);
+    }
+
+    let mut child = cmd
         .current_dir(&cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

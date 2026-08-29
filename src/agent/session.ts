@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { parsePrompt, type Prompt } from "./prompts";
+import { detectHandoff } from "./handoff";
 
 export const AGENT_SESSION = "main";
 
@@ -13,6 +14,8 @@ export type Block =
       /** A question the agent asked in prose, lifted out so it can be
        *  answered by clicking rather than retyped. */
       prompt?: Prompt;
+      /** A command this reply says needs a real terminal. */
+      handoff?: string;
     }
   | { kind: "thinking"; id: string; text: string }
   | { kind: "tool"; id: string; name: string; input: unknown; status: "running" | "done" | "error"; result?: string }
@@ -31,6 +34,11 @@ interface SessionInfo {
 
 interface AgentStore {
   running: boolean;
+  /** The conversation id, owned by the app so the terminal can resume it. */
+  sessionId: string;
+  /** Whether that conversation exists yet. Resuming one that was never
+   *  started fails, so the terminal has to be told which to use. */
+  hasConversation: boolean;
   /** Models the agent said it accepts, learned from a /model reply. */
   models: string[];
   busy: boolean;
@@ -39,6 +47,9 @@ interface AgentStore {
   error: string | null;
 
   start: (cwd: string) => Promise<void>;
+  /** Restart against the same conversation, picking up anything that
+   *  happened to it elsewhere — in the terminal, for instance. */
+  reload: (cwd: string) => Promise<void>;
   send: (text: string) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
@@ -114,7 +125,12 @@ export const useAgent = create<AgentStore>((set, get) => {
           if (switched && pendingCommand === "model") {
             set((st) => ({ info: { ...st.info, model: switched[1].trim() } }));
           }
-          added.push({ kind: "text", id: nextId(), text: c.text, ...(prompt ? { prompt } : {}) });
+          const handoff = detectHandoff(c.text);
+          added.push({
+            kind: "text", id: nextId(), text: c.text,
+            ...(prompt ? { prompt } : {}),
+            ...(handoff ? { handoff } : {}),
+          });
         } else if (c.type === "thinking" && c.thinking?.trim()) {
           added.push({ kind: "thinking", id: nextId(), text: c.thinking });
         } else if (c.type === "tool_use") {
@@ -175,9 +191,13 @@ export const useAgent = create<AgentStore>((set, get) => {
   };
 
   let attached = false;
+  /** Whether this conversation exists yet; a resume of nothing is an error. */
+  let started = false;
 
   return {
     running: false,
+    sessionId: crypto.randomUUID(),
+    hasConversation: false,
     models: [],
     busy: false,
     blocks: [],
@@ -195,11 +215,23 @@ export const useAgent = create<AgentStore>((set, get) => {
         });
       }
       try {
-        await invoke("agent_start", { id: AGENT_SESSION, cwd });
+        await invoke("agent_start", {
+          id: AGENT_SESSION,
+          cwd,
+          sessionId: get().sessionId,
+          resume: started,
+        });
+        started = true;
         set({ running: true, error: null });
       } catch (err) {
         set({ error: err instanceof Error ? err.message : String(err), running: false });
       }
+    },
+
+    reload: async (cwd) => {
+      await invoke("agent_stop", { id: AGENT_SESSION }).catch(() => {});
+      set({ running: false });
+      await get().start(cwd);
     },
 
     send: async (text) => {
@@ -209,6 +241,7 @@ export const useAgent = create<AgentStore>((set, get) => {
       pendingCommand = slash ? slash[1] : null;
       set((s) => ({
         busy: true,
+        hasConversation: true,
         blocks: [...s.blocks, { kind: "user", id: nextId(), text: trimmed }],
       }));
       try {

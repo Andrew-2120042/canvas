@@ -1473,3 +1473,27 @@ body {
   color: var(--text-dim);
   font-size: 10.5px;
 }
+
+/* A reply that needs a terminal offers the way there, rather than leaving
+   someone to work out that they have been turned away. */
+.ag-handoff {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 7px 11px;
+  border: 1px solid #3E4A5C;
+  border-radius: 8px;
+  background: #2F3846;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: default;
+}
+
+.ag-handoff:hover { background: #3A4657; border-color: #2B7FFF; }
+
+.ag-handoff-cmd {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

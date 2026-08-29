@@ -5,6 +5,7 @@ import { Markdown } from "./markdown";
 import { prettyToolName, useAgent, type Block } from "./session";
 import { PromptCard } from "./PromptCard";
 import type { Prompt } from "./prompts";
+import { isTerminalOnly } from "./handoff";
 
 /** Models offered before the agent has told us its own list. */
 const DEFAULT_MODELS = ["opus", "sonnet", "haiku", "fable", "best", "default"];
@@ -79,7 +80,14 @@ function ToolStep({ block }: { block: Extract<Block, { kind: "tool" }> }) {
  * The agent panel: a conversation the app renders itself from a structured
  * event stream, laid out as a running narrative rather than a stack of cards.
  */
-export function AgentPanel({ cwd }: { cwd: string }) {
+export function AgentPanel({
+  cwd,
+  onHandoff,
+}: {
+  cwd: string;
+  /** Carry a command into the terminal, on the same conversation. */
+  onHandoff: (command: string) => void;
+}) {
   const { running, busy, blocks, info, models, error, start, send, stop, clear } = useAgent();
   /**
    * Choices always surface in one place: attached above the composer, never
@@ -131,6 +139,15 @@ export function AgentPanel({ cwd }: { cwd: string }) {
 
   const submit = (text = draft) => {
     if (!text.trim()) return;
+    // Sending a terminal-only command headless just returns "isn't available";
+    // carry it to the terminal instead of showing that to someone.
+    const slash = /^\/(\w[\w-]*)/.exec(text.trim());
+    if (slash && isTerminalOnly(slash[1])) {
+      setDraft("");
+      setChoice(null);
+      onHandoff(`/${slash[1].toLowerCase()}`);
+      return;
+    }
     setChoice(null); // any open prompt is answered or abandoned by sending
     void send(text);
     setDraft("");
@@ -165,7 +182,15 @@ export function AgentPanel({ cwd }: { cwd: string }) {
               return <div key={b.id} className="agent-user">{b.text}</div>;
             case "text":
               return (
-                <div key={b.id} className="agent-text"><Markdown text={b.text} /></div>
+                <div key={b.id} className="agent-text">
+                  <Markdown text={b.text} />
+                  {b.handoff && (
+                    <button className="ag-handoff" onClick={() => onHandoff(b.handoff!)}>
+                      <span className="ag-handoff-cmd">{b.handoff}</span>
+                      <span>needs a terminal — open it here</span>
+                    </button>
+                  )}
+                </div>
               );
             case "thinking":
               return <Thinking key={b.id} text={b.text} />;
