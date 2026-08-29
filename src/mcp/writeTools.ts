@@ -7,10 +7,10 @@ import { registerTool } from "./bridge";
  *  store actions collapses into a single undo step — matching how the same
  *  change made by hand undoes in one press. */
 let seq = 0;
-const gestureKey = (op: string) => {
-  // Every agent write belongs to the build in progress, so undo takes the
-  // whole attempt back rather than one node at a time.
-  noteAgentWrite();
+/** Every agent write belongs to the build in progress, so undo takes the whole
+ *  attempt back rather than one node at a time. */
+const gestureKey = (op: string, ids: string[] = []) => {
+  noteAgentWrite(op, ids);
   return `mcp:${op}:${Date.now()}:${seq++}`;
 };
 
@@ -103,7 +103,7 @@ export function registerWriteTools(): void {
 
     // Geometry and styles are separate store actions, mirroring how a drag
     // and a panel edit differ in the UI.
-    const key = gestureKey("update");
+    const key = gestureKey("update", [id]);
     const rect: Partial<{ x: number; y: number; width: number; height: number }> = {};
     if (args.x !== undefined) rect.x = num(args.x, "x");
     if (args.y !== undefined) rect.y = num(args.y, "y");
@@ -132,7 +132,7 @@ export function registerWriteTools(): void {
       ? args.ids.map(String)
       : [String(args.id ?? "")];
     ids.forEach(requireNode);
-    noteAgentWrite();
+    noteAgentWrite("delete", ids);
     useDoc.getState().removeNodes(ids);
     return { deleted: ids };
   });
@@ -143,8 +143,9 @@ export function registerWriteTools(): void {
       : [String(args.id ?? "")];
     ids.forEach(requireNode);
     const offset = args.offset === undefined ? 10 : num(args.offset, "offset");
-    noteAgentWrite();
+    noteAgentWrite("duplicate", ids);
     const made = useDoc.getState().duplicateNodes(ids, offset);
+    noteAgentWrite("duplicate", made);
     return { created: made };
   });
 

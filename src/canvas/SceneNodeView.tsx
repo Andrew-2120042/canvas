@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useActive, useDoc } from "../document/store";
+import { useActivity } from "../state/activity";
 import { nodeCss, rgba } from "../document/style";
 import { PathView } from "./PathView";
 import type { NodeId } from "../document/types";
@@ -10,6 +11,8 @@ import type { NodeId } from "../document/types";
  */
 export function SceneNodeView({ id }: { id: NodeId }) {
   const node = useActive((f) => f.doc.nodes[id]);
+  const arrivalAt = useActivity((a) => a.arrivals[id]);
+  const beingBuilt = useActivity((a) => a.building && a.touched.includes(id));
   const editing = useActive((f) => f.editingId === id) && node?.type === "text";
   const editorRef = useRef<HTMLDivElement>(null);
   /** Latest typed value, mirrored on every input. */
@@ -43,6 +46,10 @@ export function SceneNodeView({ id }: { id: NodeId }) {
 
   if (!node || !node.visible) return null;
 
+  // A node the agent has just made plays a short entrance, delayed so that a
+  // burst of tool calls reads as a build rather than appearing all at once.
+  const delay = arrivalAt !== undefined ? Math.max(0, arrivalAt - Date.now()) : null;
+
   const isText = node.type === "text";
   const isImage = node.type === "image";
   const isPath = node.type === "path";
@@ -52,9 +59,14 @@ export function SceneNodeView({ id }: { id: NodeId }) {
 
   return (
     <div
-      className={`scene-node scene-node--${node.type}`}
+      className={
+        `scene-node scene-node--${node.type}` +
+        (delay !== null ? " is-arriving" : "") +
+        (beingBuilt ? " is-building" : "")
+      }
       data-node-id={node.id}
       style={{
+        ...(delay !== null ? { animationDelay: `${delay}ms` } : {}),
         ...nodeCss(node),
         left: node.x,
         top: node.y,

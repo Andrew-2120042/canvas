@@ -1,4 +1,5 @@
 import { useDoc } from "../document/store";
+import { useActivity } from "../state/activity";
 
 /**
  * Groups an agent's writes into one undoable build.
@@ -27,14 +28,17 @@ function closeNow(): void {
     idleTimer = null;
   }
   useDoc.getState().endBuild();
+  useActivity.getState().endBuild();
 }
 
 /** Called by every agent write; opens the build if one is not already open. */
-export function noteAgentWrite(): void {
+export function noteAgentWrite(op = "work", ids: string[] = []): void {
   if (!open) {
     open = true;
     useDoc.getState().beginBuild();
+    useActivity.getState().beginBuild();
   }
+  useActivity.getState().noteWrite(op, ids);
   // A build with no explicit end — an agent that crashes mid-turn, say —
   // must not swallow the user's next edit into itself.
   if (idleTimer) clearTimeout(idleTimer);

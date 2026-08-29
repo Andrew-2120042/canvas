@@ -11,6 +11,7 @@ import { CommentLayer, type PendingComment } from "../canvas/CommentLayer";
 import { usePenTool } from "../canvas/usePenTool";
 import { PenPreview } from "../canvas/PenPreview";
 import { PathEditOverlay } from "../canvas/PathEditOverlay";
+import { BuildStatus } from "../canvas/BuildStatus";
 
 /**
  * Infinite viewport. Content lives in a single transformed layer, so panning
@@ -116,6 +117,7 @@ export function CanvasRegion() {
       <PathEditOverlay />
       <SelectionOverlay />
       <CommentLayer pending={pending} onCancel={() => setPending(null)} />
+      <BuildStatus />
     </main>
   );
 }
