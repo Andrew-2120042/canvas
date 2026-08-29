@@ -80,7 +80,14 @@ function ToolStep({ block }: { block: Extract<Block, { kind: "tool" }> }) {
  */
 export function AgentPanel({ cwd }: { cwd: string }) {
   const { running, busy, blocks, info, models, error, start, send, stop, clear } = useAgent();
-  const [modelMenu, setModelMenu] = useState(false);
+  /**
+   * Choices always surface in one place: attached above the composer, never
+   * inline in the transcript. A prompt buried in scrollback is a prompt that
+   * scrolls away mid-answer.
+   */
+  const [choice, setChoice] = useState<{ command?: string; options: string[] } | null>(null);
+  /** Blocks whose choices have already been offered or dismissed. */
+  const seenChoices = useRef(new Set<string>());
   const [draft, setDraft] = useState("");
   const [menuIndex, setMenuIndex] = useState(0);
   /** Escape dismisses the command menu without discarding what was typed. */
@@ -97,6 +104,18 @@ export function AgentPanel({ cwd }: { cwd: string }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [blocks.length, busy]);
 
+  // Raise the newest set of choices to the composer, once.
+  useEffect(() => {
+    for (let i = blocks.length - 1; i >= 0; i--) {
+      const b = blocks[i];
+      if (b.kind !== "text" || !b.options?.length) continue;
+      if (seenChoices.current.has(b.id)) break;
+      seenChoices.current.add(b.id);
+      setChoice({ command: b.optionCommand, options: b.options });
+      break;
+    }
+  }, [blocks]);
+
   // Slash commands, offered as soon as the draft is a bare "/word".
   const slashQuery = /^\/(\S*)$/.exec(draft);
   const commands = useMemo(() => {
@@ -111,9 +130,13 @@ export function AgentPanel({ cwd }: { cwd: string }) {
 
   const submit = (text = draft) => {
     if (!text.trim()) return;
+    setChoice(null); // any open prompt is answered or abandoned by sending
     void send(text);
     setDraft("");
   };
+
+  const choose = (option: string) =>
+    submit(choice?.command ? `/${choice.command} ${option}` : option);
 
   const pickCommand = (cmd: string) => {
     setDraft(`/${cmd} `);
@@ -141,37 +164,7 @@ export function AgentPanel({ cwd }: { cwd: string }) {
               return <div key={b.id} className="agent-user">{b.text}</div>;
             case "text":
               return (
-                <div key={b.id} className="agent-text">
-                  <Markdown text={b.text} />
-                  {/* A model reply gets the real picker; any other command
-                      that lists choices still gets plain chips. */}
-                  {b.options && b.options.length > 0 && (
-                    b.optionCommand === "model" ? (
-                      <div className="mp-inline">
-                        <ModelPicker
-                          models={b.options}
-                          current={info.model}
-                          onPick={(m) => submit(`/model ${m}`)}
-                          onCancel={() => {}}
-                        />
-                      </div>
-                    ) : (
-                      <div className="ag-options">
-                        {b.options.map((opt) => (
-                          <button
-                            key={opt}
-                            className="ag-option"
-                            onClick={() =>
-                              submit(b.optionCommand ? `/${b.optionCommand} ${opt}` : opt)
-                            }
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    )
-                  )}
-                </div>
+                <div key={b.id} className="agent-text"><Markdown text={b.text} /></div>
               );
             case "thinking":
               return <Thinking key={b.id} text={b.text} />;
@@ -210,6 +203,35 @@ export function AgentPanel({ cwd }: { cwd: string }) {
       )}
 
       <div className="agent-composer-wrap">
+        {choice && (
+          <div className="ag-attached">
+            {choice.command === "model" ? (
+              <ModelPicker
+                models={choice.options}
+                current={info.model}
+                onPick={choose}
+                onCancel={() => setChoice(null)}
+              />
+            ) : (
+              <div className="ag-choice-card">
+                <div className="mp-head">
+                  <span className="mp-title">
+                    {choice.command ? `/${choice.command}` : "Choose"}
+                  </span>
+                  <button className="mp-close" onClick={() => setChoice(null)}>×</button>
+                </div>
+                <div className="ag-options">
+                  {choice.options.map((opt) => (
+                    <button key={opt} className="ag-option" onClick={() => choose(opt)}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {commands.length > 0 && (
           <div className="ag-slash-menu">
             {commands.map((c, i) => (
@@ -270,22 +292,18 @@ export function AgentPanel({ cwd }: { cwd: string }) {
             <div className="ag-model-wrap">
               <button
                 className="ag-model-btn"
-                onClick={() => setModelMenu((v) => !v)}
+                onClick={() =>
+                  setChoice((c) =>
+                    c?.command === "model"
+                      ? null
+                      : { command: "model", options: models.length ? models : DEFAULT_MODELS },
+                  )
+                }
                 title="Change model"
               >
                 {info.model ?? (running ? "ready" : "starting")}
-                <Chevron open={modelMenu} />
+                <Chevron open={choice?.command === "model"} />
               </button>
-              {modelMenu && (
-                <div className="ag-model-pop">
-                  <ModelPicker
-                    models={models.length ? models : DEFAULT_MODELS}
-                    current={info.model}
-                    onPick={(m) => { setModelMenu(false); submit(`/model ${m}`); }}
-                    onCancel={() => setModelMenu(false)}
-                  />
-                </div>
-              )}
             </div>
             <span className="agent-spacer" />
             {blocks.length > 0 && (

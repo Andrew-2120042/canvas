@@ -1383,7 +1383,6 @@ body {
 
 .mp-card {
   width: 100%;
-  max-width: 520px;
   padding: 12px 14px 10px;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -1391,17 +1390,32 @@ body {
   outline: none;
 }
 
-.mp-inline { margin-top: 10px; }
+/* Attached above the composer and sharing its edge, so a prompt reads as
+   part of the input rather than a card floating near it. */
+.ag-attached {
+  margin: 0 12px -1px;
+}
 
-.mp-model-pop, .ag-model-pop {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  width: 460px;
-  max-width: 70vw;
-  z-index: 6;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+.ag-attached .mp-card,
+.ag-attached .ag-choice-card {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-color: transparent;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.ag-choice-card {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
   border-radius: 12px;
+  background: #2B2B2B;
+}
+
+/* The composer keeps square shoulders while a prompt sits on it. */
+.ag-attached + .agent-composer {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .mp-head { display: flex; align-items: center; }
