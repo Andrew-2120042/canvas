@@ -4,6 +4,7 @@ import {
 import { useDoc, type FileId, type FileState } from "./store";
 import { useViewport } from "../state/viewport";
 import { useUi } from "../state/ui";
+import { useAgent } from "../agent/session";
 
 const DIR = "canvas";
 const PATH = `${DIR}/state.json`;
@@ -18,6 +19,9 @@ interface PersistedState {
   activeFileId: FileId;
   /** Panel layout. Where someone put their panels is part of their workspace,
    *  not a transient; losing it on every launch is its own small annoyance. */
+  /** The agent conversation, so the terminal can still resume it after a
+   *  restart and a reload does not strand it. */
+  agentSessionId?: string;
   layout?: {
     terminalOpen: boolean;
     terminalDock: "bottom" | "right";
@@ -43,6 +47,7 @@ function snapshot(): PersistedState {
   const ui = useUi.getState();
   return {
     version: VERSION,
+    agentSessionId: useAgent.getState().sessionId || undefined,
     files,
     fileOrder: s.fileOrder,
     activeFileId: s.activeFileId,
@@ -100,6 +105,9 @@ export async function loadSaved(): Promise<boolean> {
     const vp = parsed.files[parsed.activeFileId].viewport;
     useViewport.setState({ x: vp.x, y: vp.y, zoom: vp.zoom });
     if (parsed.layout) useUi.setState(parsed.layout);
+    if (parsed.agentSessionId) {
+      useAgent.setState({ sessionId: parsed.agentSessionId });
+    }
     return true;
   } catch (err) {
     console.warn("[persist] load failed; starting fresh", err);
@@ -126,6 +134,7 @@ export function startAutosave(): () => void {
   const unsubDoc = useDoc.subscribe(schedule);
   const unsubView = useViewport.subscribe(schedule);
   const unsubUi = useUi.subscribe(schedule);
+  const unsubAgent = useAgent.subscribe(schedule);
 
   const flush = () => {
     if (!dirty) return;
@@ -141,6 +150,7 @@ export function startAutosave(): () => void {
     unsubDoc();
     unsubView();
     unsubUi();
+    unsubAgent();
     window.removeEventListener("beforeunload", flush);
     window.removeEventListener("blur", flush);
   };

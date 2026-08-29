@@ -91,16 +91,7 @@ pub fn agent_start(
         cmd.args(["--session-id", &session_id]);
     }
 
-    // Same reasoning as the pty: this agent owns its conversation, and an
-    // inherited session marker would stop its transcript being written.
-    for key in [
-        "CLAUDE_CODE_CHILD_SESSION",
-        "CLAUDE_CODE_SESSION_ID",
-        "CLAUDE_CODE_ENTRYPOINT",
-        "CLAUDECODE",
-    ] {
-        cmd.env_remove(key);
-    }
+    crate::clear_inherited_agent_env(&mut cmd);
 
     let mut child = cmd
         .current_dir(&cwd)
@@ -186,6 +177,28 @@ pub fn agent_stop(state: tauri::State<'_, AgentState>, id: String) -> Result<(),
 #[tauri::command]
 pub fn agent_running(state: tauri::State<'_, AgentState>, id: String) -> bool {
     state.sessions.lock().unwrap().contains_key(&id)
+}
+
+/// Whether a conversation has actually been written to disk.
+///
+/// The handoff resumes by id, and resuming one that was never persisted fails
+/// with "no conversation found". Having sent a message is not proof it was
+/// saved — transcript writing can be suppressed — so ask the filesystem
+/// rather than assume.
+#[tauri::command]
+pub fn agent_session_exists(cwd: String, session_id: String) -> bool {
+    let Some(home) = std::env::var_os("HOME") else { return false };
+    // Claude Code names a project directory after its path, with every
+    // non-alphanumeric character replaced by a dash.
+    let slug: String = cwd
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    std::path::Path::new(&home)
+        .join(".claude/projects")
+        .join(slug)
+        .join(format!("{session_id}.jsonl"))
+        .exists()
 }
 
 impl AgentState {

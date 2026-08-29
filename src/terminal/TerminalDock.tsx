@@ -46,7 +46,6 @@ export function TerminalDock() {
   const [cwd, setCwd] = useState("");
   const dragging = useRef(false);
   const sessionId = useAgent((s) => s.sessionId);
-  const hasConversation = useAgent((s) => s.hasConversation);
   const reload = useAgent((s) => s.reload);
   /** Set while the terminal holds the conversation, so returning to the
    *  panel picks up whatever happened there. */
@@ -68,20 +67,26 @@ export function TerminalDock() {
    * knowing everything said in the panel, and anything done there is waiting
    * when you come back.
    */
-  const handoff = (command: string) => {
+  const handoff = async (command: string) => {
     handedOff.current = true;
     setMode("terminal");
 
-    // Resuming a conversation that was never started fails outright, so open
-    // the session under this id instead — either way both surfaces share it.
-    const start = hasConversation
+    // Resume only a conversation that is actually on disk. Having sent a
+    // message is not proof it was saved, and resuming a missing one fails
+    // outright — so ask, then fall back to opening the session under this id.
+    const onDisk = await invoke<boolean>("agent_session_exists", {
+      cwd,
+      sessionId,
+    }).catch(() => false);
+
+    const start = onDisk
       ? ["claude", "--resume", sessionId]
       : ["claude", "--session-id", sessionId];
 
     // Run the agent as the session's own process rather than typing at a
     // shell prompt. Typing fought whatever was already on the line, and the
     // shell inserted control characters literally instead of acting on them.
-    void runInTerminal(start, cwd).then(() => {
+    await runInTerminal(start, cwd).then(() => {
       // Offer the command at the agent's prompt, unsent, once it is up.
       setTimeout(() => {
         void invoke("pty_write", { id: SESSION, data: command }).catch(() => {});

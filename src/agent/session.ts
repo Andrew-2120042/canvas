@@ -196,7 +196,11 @@ export const useAgent = create<AgentStore>((set, get) => {
 
   return {
     running: false,
-    sessionId: crypto.randomUUID(),
+    // Deliberately empty: the id is restored with the document, or minted on
+    // first use. Generating one here would mint a fresh id on every page load
+    // — including every hot reload — and the handoff would then try to resume
+    // a conversation that was never created.
+    sessionId: "",
     hasConversation: false,
     models: [],
     busy: false,
@@ -214,11 +218,17 @@ export const useAgent = create<AgentStore>((set, get) => {
           if (e.payload.id === AGENT_SESSION) set({ running: false, busy: false });
         });
       }
+      // Mint an id the first time one is needed, then keep it.
+      let sessionId = get().sessionId;
+      if (!sessionId) {
+        sessionId = crypto.randomUUID();
+        set({ sessionId });
+      }
       try {
         await invoke("agent_start", {
           id: AGENT_SESSION,
           cwd,
-          sessionId: get().sessionId,
+          sessionId,
           resume: started,
         });
         started = true;

@@ -40,6 +40,32 @@ fn read_image_data_url(path: String) -> Result<String, String> {
     Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
 }
 
+/// Environment variables that mark a process as belonging to an existing
+/// agent session.
+///
+/// When the app is launched from inside one it inherits them, and anything it
+/// spawns then looks like a child of that session. That produced a visible
+/// "transcript saving is off" warning in the terminal, so they are cleared —
+/// though testing showed they do not actually suppress persistence.
+fn inherited_agent_vars() -> Vec<String> {
+    std::env::vars()
+        .map(|(k, _)| k)
+        .filter(|k| k.starts_with("CLAUDE_") || k == "CLAUDECODE")
+        .collect()
+}
+
+pub fn clear_inherited_agent_env(cmd: &mut std::process::Command) {
+    for key in inherited_agent_vars() {
+        cmd.env_remove(key);
+    }
+}
+
+pub fn clear_inherited_agent_env_pty(cmd: &mut portable_pty::CommandBuilder) {
+    for key in inherited_agent_vars() {
+        cmd.env_remove(key);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -65,6 +91,7 @@ pub fn run() {
             agent::agent_send,
             agent::agent_stop,
             agent::agent_running,
+            agent::agent_session_exists,
         ])
         .on_window_event(|window, event| {
             // The sidecar is a child of this app, not a background service.
