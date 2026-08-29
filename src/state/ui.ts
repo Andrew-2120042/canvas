@@ -14,6 +14,10 @@ interface UiStore {
    *  talks about. */
   terminalDock: "bottom" | "right";
   setTerminalDock: (d: "bottom" | "right") => void;
+  /** Which surface the dock shows. The structured agent panel is the primary
+   *  one; the raw pty stays available for anything it cannot do. */
+  agentMode: "agent" | "terminal";
+  setAgentMode: (m: "agent" | "terminal") => void;
   terminalHeight: number;
   setTerminalHeight: (h: number) => void;
   terminalWidth: number;
@@ -34,6 +38,8 @@ export const useUi = create<UiStore>((set) => ({
   toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
   terminalDock: "bottom",
   setTerminalDock: (terminalDock) => set({ terminalDock }),
+  agentMode: "agent",
+  setAgentMode: (agentMode) => set({ agentMode }),
   terminalHeight: 300,
   setTerminalHeight: (terminalHeight) =>
     set({ terminalHeight: Math.max(120, Math.min(760, terminalHeight)) }),

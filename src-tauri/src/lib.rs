@@ -1,8 +1,10 @@
+mod agent;
 mod agent_config;
 mod mcp;
 mod pty;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use agent::AgentState;
 use mcp::McpState;
 use pty::PtyState;
 use tauri::Manager;
@@ -41,6 +43,7 @@ fn read_image_data_url(path: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AgentState::default())
         .manage(McpState::default())
         .manage(PtyState::default())
         .plugin(tauri_plugin_opener::init())
@@ -58,12 +61,17 @@ pub fn run() {
             pty::pty_resize,
             pty::pty_kill,
             pty::workspace_dir,
+            agent::agent_start,
+            agent::agent_send,
+            agent::agent_stop,
+            agent::agent_running,
         ])
         .on_window_event(|window, event| {
             // The sidecar is a child of this app, not a background service.
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window.state::<McpState>().shutdown();
                 window.state::<PtyState>().shutdown();
+                window.state::<AgentState>().shutdown();
             }
         })
         .run(tauri::generate_context!())
