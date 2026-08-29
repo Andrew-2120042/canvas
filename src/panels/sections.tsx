@@ -1,6 +1,6 @@
 import { useActive } from "../document/store";
 import {
-  FILTER_FNS, selectionColours,
+  FILTER_FNS, resolvedLineHeight, selectionColours,
   type BorderSide, type FilterStyle, type ShadowStyle,
 } from "../document/style";
 import type { SceneNode } from "../document/types";
@@ -216,7 +216,7 @@ export function TextSection({ node, patch }: { node: SceneNode; patch: Patch }) 
       <div className="field-row">
         <NumberField label="⇕A" value={node.fontSize ?? 16}
           onCommit={(v) => patch({ fontSize: Math.max(1, v) })} />
-        <NumberField label="A̲" value={node.lineHeight ?? 21}
+        <NumberField label="A̲" value={resolvedLineHeight(node)}
           onCommit={(v) => patch({ lineHeight: Math.max(1, v) })} />
         <NumberField label="|A|" value={node.letterSpacing ?? 0}
           onCommit={(v) => patch({ letterSpacing: v })} />

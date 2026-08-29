@@ -90,6 +90,9 @@ export interface SceneNode {
   fontFamily?: string;
   fontWeight?: number;
   fontSize?: number;
+  /** Absolute px. Left unset for automatic leading, which tracks fontSize —
+   *  a fixed value frozen at creation stops matching the moment the font size
+   *  changes, and the glyphs then spill out of the node's own bounds. */
   lineHeight?: number;
   letterSpacing?: number;
   textAlign?: "left" | "center" | "right";
@@ -169,7 +172,6 @@ export function createNode(
       ? {
           text: "Text",
           fontSize: 16,
-          lineHeight: 21,
           letterSpacing: 0,
           textAlign: "left" as const,
           preWrap: true,

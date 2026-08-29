@@ -129,6 +129,13 @@ function buildServer() {
         radius: z.number().optional(),
         text: z.string().optional().describe("Text nodes only."),
         fontSize: z.number().optional().describe("Text nodes only."),
+        fontWeight: z.number().optional()
+          .describe("Text nodes only. 100-900; 400 normal, 600 semibold, 700 bold."),
+        lineHeight: z.number().optional()
+          .describe("Text nodes only, in px. Omit for automatic leading."),
+        letterSpacing: z.number().optional().describe("Text nodes only, in em."),
+        textAlign: z.enum(["left", "center", "right"]).optional()
+          .describe("Text nodes only."),
       },
     },
     async (args) => text(await bridge.call("create_node", args)),
@@ -153,6 +160,10 @@ function buildServer() {
         locked: z.boolean().optional(),
         text: z.string().optional(),
         fontSize: z.number().optional(),
+        fontWeight: z.number().optional().describe("100-900."),
+        lineHeight: z.number().optional().describe("px; omit for automatic."),
+        letterSpacing: z.number().optional().describe("em."),
+        textAlign: z.enum(["left", "center", "right"]).optional(),
       },
     },
     async (args) => text(await bridge.call("update_node", args)),

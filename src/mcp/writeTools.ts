@@ -56,6 +56,22 @@ function stylePatch(args: Record<string, unknown>): Partial<SceneNode> {
   if (args.locked !== undefined) patch.locked = !!args.locked;
   if (args.text !== undefined) patch.text = String(args.text);
   if (args.fontSize !== undefined) patch.fontSize = Math.max(1, num(args.fontSize, "fontSize"));
+  if (args.fontWeight !== undefined) {
+    patch.fontWeight = Math.min(900, Math.max(100, num(args.fontWeight, "fontWeight")));
+  }
+  if (args.lineHeight !== undefined) {
+    patch.lineHeight = Math.max(1, num(args.lineHeight, "lineHeight"));
+  }
+  if (args.letterSpacing !== undefined) {
+    patch.letterSpacing = num(args.letterSpacing, "letterSpacing");
+  }
+  if (args.textAlign !== undefined) {
+    const a = String(args.textAlign);
+    if (!["left", "center", "right"].includes(a)) {
+      throw new Error("textAlign must be left, center or right");
+    }
+    patch.textAlign = a as "left" | "center" | "right";
+  }
   return patch;
 }
 
@@ -92,7 +108,12 @@ export function registerWriteTools(): void {
       id, type, parentId: parent,
       x: made.x, y: made.y, width: made.width, height: made.height,
       name: made.name, fill: made.fill, opacity: made.opacity, radius: made.radius,
-      ...(made.type === "text" ? { text: made.text, fontSize: made.fontSize } : {}),
+      ...(made.type === "text"
+        ? {
+            text: made.text, fontSize: made.fontSize,
+            fontWeight: made.fontWeight, textAlign: made.textAlign,
+          }
+        : {}),
     };
   });
 

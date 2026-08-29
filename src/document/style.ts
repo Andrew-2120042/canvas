@@ -63,6 +63,20 @@ export interface GuideStyle extends Paint {
 
 // --- CSS mapping ----------------------------------------------------------
 
+/** Leading used when a node does not set its own. */
+export const AUTO_LINE_HEIGHT = 1.3;
+
+/** The line box a text node should render with, in px. */
+export function resolvedLineHeight(node: SceneNode): number {
+  const size = node.fontSize ?? 16;
+  // A line box smaller than the glyphs is never what someone meant; it is a
+  // value left behind by an earlier, smaller font size.
+  if (node.lineHeight !== undefined && node.lineHeight >= size * 0.8) {
+    return node.lineHeight;
+  }
+  return Math.round(size * AUTO_LINE_HEIGHT);
+}
+
 /** #RGB or #RRGGBB plus an alpha, as an rgba() string. */
 export function rgba(hex: string, alpha = 1): string {
   let h = hex.replace("#", "").trim();
@@ -139,7 +153,7 @@ export function nodeCss(node: SceneNode): CSSProperties {
     if (node.fontFamily) css.fontFamily = node.fontFamily;
     if (node.fontWeight) css.fontWeight = node.fontWeight;
     if (node.fontSize) css.fontSize = node.fontSize;
-    if (node.lineHeight) css.lineHeight = `${node.lineHeight}px`;
+    css.lineHeight = `${resolvedLineHeight(node)}px`;
     if (node.letterSpacing) css.letterSpacing = `${node.letterSpacing}em`;
     if (node.textAlign) css.textAlign = node.textAlign;
     css.whiteSpace = node.preWrap === false ? "normal" : "pre-wrap";
