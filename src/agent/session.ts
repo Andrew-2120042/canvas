@@ -33,8 +33,19 @@ interface SessionInfo {
   slashCommands?: string[];
 }
 
+/** A tool the agent tried to use but was not allowed to. */
+export interface PendingPermission {
+  tools: string[];
+}
+
 interface AgentStore {
   running: boolean;
+  /** Tools granted for this session beyond the canvas set. */
+  extraTools: string[];
+  /** A denial waiting on the user, if any. */
+  pendingPermission: PendingPermission | null;
+  /** The last thing asked, so it can be retried after a grant. */
+  lastPrompt: string | null;
   /** The conversation id, owned by the app so the terminal can resume it. */
   sessionId: string;
   /** Whether that conversation exists yet. Resuming one that was never
@@ -54,6 +65,9 @@ interface AgentStore {
   send: (text: string) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
+  /** Grant the pending tools and retry what was interrupted. */
+  grantPermission: (cwd: string) => Promise<void>;
+  dismissPermission: () => void;
 }
 
 let seq = 0;
@@ -248,6 +262,23 @@ export const useAgent = create<AgentStore>((set, get) => {
               : b,
           ),
         }));
+
+        // A tool the agent is not allowed to use fails on every attempt and
+        // cannot be approved from a headless session, so it would otherwise
+        // loop silently. Surface it as something the user can act on.
+        const denied = /permissions to use ([\w-]+)/.exec(text);
+        if (denied && c.is_error) {
+          set((s) =>
+            s.extraTools.includes(denied[1]) ||
+            s.pendingPermission?.tools.includes(denied[1])
+              ? s
+              : {
+                  pendingPermission: {
+                    tools: [...(s.pendingPermission?.tools ?? []), denied[1]],
+                  },
+                },
+          );
+        }
       }
       return;
     }
@@ -255,6 +286,18 @@ export const useAgent = create<AgentStore>((set, get) => {
     if (type === "result") {
       // The turn is over, so whatever it built is one finished thing.
       endAgentBuild();
+
+      const denials: Array<{ tool_name?: string }> = event.permission_denials ?? [];
+      if (denials.length) {
+        const names = [...new Set(denials.map((d) => d.tool_name).filter(Boolean))] as string[];
+        set((s) => ({
+          pendingPermission: {
+            tools: [...new Set([...(s.pendingPermission?.tools ?? []), ...names])].filter(
+              (t) => !s.extraTools.includes(t),
+            ),
+          },
+        }));
+      }
       set((s) => ({
         busy: false,
         blocks: [...s.blocks, {
@@ -287,6 +330,9 @@ export const useAgent = create<AgentStore>((set, get) => {
 
   return {
     running: false,
+    extraTools: [],
+    pendingPermission: null,
+    lastPrompt: null,
     // Deliberately empty: the id is restored with the document, or minted on
     // first use. Generating one here would mint a fresh id on every page load
     // — including every hot reload — and the handoff would then try to resume
@@ -321,6 +367,7 @@ export const useAgent = create<AgentStore>((set, get) => {
           cwd,
           sessionId,
           resume: started,
+          extraTools: get().extraTools,
         });
         started = true;
         set({ running: true, error: null });
@@ -343,6 +390,7 @@ export const useAgent = create<AgentStore>((set, get) => {
       set((s) => ({
         busy: true,
         hasConversation: true,
+        lastPrompt: trimmed,
         blocks: [...s.blocks, { kind: "user", id: nextId(), text: trimmed }],
       }));
       try {
@@ -364,5 +412,22 @@ export const useAgent = create<AgentStore>((set, get) => {
     },
 
     clear: () => set({ blocks: [] }),
+
+    grantPermission: async (cwd) => {
+      const { pendingPermission, extraTools, lastPrompt } = get();
+      if (!pendingPermission) return;
+      const granted = [...new Set([...extraTools, ...pendingPermission.tools])];
+      set({ extraTools: granted, pendingPermission: null });
+
+      // The allowlist is fixed at spawn, so a grant means a restart. The
+      // conversation lives under an id rather than in the process, so
+      // resuming keeps everything said so far.
+      await invoke("agent_stop", { id: AGENT_SESSION }).catch(() => {});
+      set({ running: false });
+      await get().start(cwd);
+      if (lastPrompt) await get().send(lastPrompt);
+    },
+
+    dismissPermission: () => set({ pendingPermission: null }),
   };
 });

@@ -37,8 +37,8 @@ struct AgentClosed {
 ///
 /// Scoped deliberately: the whole point of the app is that the agent can work
 /// the canvas freely, but that is not a reason to hand it the user's shell and
-/// filesystem by default. Anything outside this list still goes through the
-/// agent's own permission flow.
+/// filesystem by default. Anything else is denied until the user grants it,
+/// which the panel asks about when a denial comes back.
 const ALLOWED_TOOLS: &str = concat!(
     "mcp__canvas__get_status,",
     "mcp__canvas__get_canvas_state,",
@@ -57,7 +57,8 @@ const ALLOWED_TOOLS: &str = concat!(
 /// `session_id` is the conversation id, held by the app rather than left to
 /// the agent, so the same conversation can be picked up elsewhere — the
 /// terminal resumes this id to get an interactive view of it. `resume` says
-/// whether that conversation already exists.
+/// whether that conversation already exists. `extra_tools` are tools the user
+/// granted this session, beyond the canvas set.
 #[tauri::command]
 pub fn agent_start(
     app: AppHandle,
@@ -66,6 +67,7 @@ pub fn agent_start(
     cwd: String,
     session_id: String,
     resume: bool,
+    extra_tools: Option<Vec<String>>,
 ) -> Result<(), String> {
     // Reattaching to a session that outlived a window reload: replay what the
     // panel needs to render its header rather than starting a second agent.
@@ -76,6 +78,15 @@ pub fn agent_start(
         return Ok(());
     }
 
+    // The allowlist is fixed when the process starts, so granting a tool
+    // means restarting — which is safe because the conversation is resumed by
+    // id rather than living in the process.
+    let mut allowed = ALLOWED_TOOLS.to_string();
+    for tool in extra_tools.into_iter().flatten() {
+        allowed.push(',');
+        allowed.push_str(&tool);
+    }
+
     let mut cmd = Command::new("claude");
     cmd.args([
         "-p",
@@ -83,7 +94,7 @@ pub fn agent_start(
         "--output-format", "stream-json",
         "--verbose",
         "--include-partial-messages",
-        "--allowedTools", ALLOWED_TOOLS,
+        "--allowedTools", &allowed,
     ]);
     if resume {
         cmd.args(["--resume", &session_id]);
