@@ -3,6 +3,7 @@ import { useActive } from "../document/store";
 import { FrameIcon, ImageIcon, RectIcon, TextIcon } from "../ui/icons";
 import { Markdown } from "./markdown";
 import { prettyToolName, useAgent, type Block } from "./session";
+import { ModelPicker } from "./ModelPicker";
 
 /** Models offered before the agent has told us its own list. */
 const DEFAULT_MODELS = ["opus", "sonnet", "haiku", "fable", "best", "default"];
@@ -82,6 +83,8 @@ export function AgentPanel({ cwd }: { cwd: string }) {
   const [modelMenu, setModelMenu] = useState(false);
   const [draft, setDraft] = useState("");
   const [menuIndex, setMenuIndex] = useState(0);
+  /** Escape dismisses the command menu without discarding what was typed. */
+  const [menuDismissed, setMenuDismissed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const selection = useActive((f) => f.selection);
@@ -97,14 +100,14 @@ export function AgentPanel({ cwd }: { cwd: string }) {
   // Slash commands, offered as soon as the draft is a bare "/word".
   const slashQuery = /^\/(\S*)$/.exec(draft);
   const commands = useMemo(() => {
-    if (!slashQuery) return [];
+    if (!slashQuery || menuDismissed) return [];
     const q = slashQuery[1].toLowerCase();
     return (info.slashCommands ?? [])
       .filter((c) => c.toLowerCase().startsWith(q))
       .slice(0, 8);
-  }, [slashQuery, info.slashCommands]);
+  }, [slashQuery, info.slashCommands, menuDismissed]);
 
-  useEffect(() => setMenuIndex(0), [draft]);
+  useEffect(() => { setMenuIndex(0); setMenuDismissed(false); }, [draft]);
 
   const submit = (text = draft) => {
     if (!text.trim()) return;
@@ -140,20 +143,33 @@ export function AgentPanel({ cwd }: { cwd: string }) {
               return (
                 <div key={b.id} className="agent-text">
                   <Markdown text={b.text} />
+                  {/* A model reply gets the real picker; any other command
+                      that lists choices still gets plain chips. */}
                   {b.options && b.options.length > 0 && (
-                    <div className="ag-options">
-                      {b.options.map((opt) => (
-                        <button
-                          key={opt}
-                          className="ag-option"
-                          onClick={() =>
-                            submit(b.optionCommand ? `/${b.optionCommand} ${opt}` : opt)
-                          }
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
+                    b.optionCommand === "model" ? (
+                      <div className="mp-inline">
+                        <ModelPicker
+                          models={b.options}
+                          current={info.model}
+                          onPick={(m) => submit(`/model ${m}`)}
+                          onCancel={() => {}}
+                        />
+                      </div>
+                    ) : (
+                      <div className="ag-options">
+                        {b.options.map((opt) => (
+                          <button
+                            key={opt}
+                            className="ag-option"
+                            onClick={() =>
+                              submit(b.optionCommand ? `/${b.optionCommand} ${opt}` : opt)
+                            }
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    )
                   )}
                 </div>
               );
@@ -236,7 +252,13 @@ export function AgentPanel({ cwd }: { cwd: string }) {
                   pickCommand(commands[menuIndex]);
                   return;
                 }
-                if (e.key === "Escape") { e.preventDefault(); setDraft(""); return; }
+                if (e.key === "Escape") {
+                  // Close the menu, keep the text — losing a half-typed
+                  // message to a dismissal is its own small betrayal.
+                  e.preventDefault();
+                  setMenuDismissed(true);
+                  return;
+                }
               }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -255,16 +277,13 @@ export function AgentPanel({ cwd }: { cwd: string }) {
                 <Chevron open={modelMenu} />
               </button>
               {modelMenu && (
-                <div className="ag-model-menu">
-                  {(models.length ? models : DEFAULT_MODELS).map((m) => (
-                    <button
-                      key={m}
-                      className="ag-slash-item"
-                      onClick={() => { setModelMenu(false); submit(`/model ${m}`); }}
-                    >
-                      {m}
-                    </button>
-                  ))}
+                <div className="ag-model-pop">
+                  <ModelPicker
+                    models={models.length ? models : DEFAULT_MODELS}
+                    current={info.model}
+                    onPick={(m) => { setModelMenu(false); submit(`/model ${m}`); }}
+                    onCancel={() => setModelMenu(false)}
+                  />
                 </div>
               )}
             </div>
