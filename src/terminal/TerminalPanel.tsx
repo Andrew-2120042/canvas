@@ -42,21 +42,30 @@ const FONT_FAMILY =
   '"SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace';
 
 /**
- * Character cell size, measured from the same font the terminal renders with.
+ * Character cell size.
  *
- * xterm's fit addon reported 441 columns for a panel that visibly fits about
- * 184 — its internal metric disagreed with what it actually drew, and the pty
- * was told the wrong width. Measuring the font directly and calling
- * `term.resize` explicitly keeps the renderer and the pty in agreement by
- * construction instead of trusting a second measurement.
+ * Starts as a measurement of the font, then is replaced by what xterm
+ * actually drew. Estimates never quite match: the fit addon once reported 441
+ * columns for a panel that fits 185, and a font advance is not the same as a
+ * rendered cell. Reading the real geometry back removes the guess entirely,
+ * so the pty and the renderer cannot disagree.
  */
-function cellSize(): { width: number; height: number } {
+function estimateCell(): { width: number; height: number } {
   const ctx = document.createElement("canvas").getContext("2d");
   if (!ctx) return { width: 8, height: 18 };
   ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
-  // A wide glyph in a monospace face is one full advance.
-  const width = ctx.measureText("M").width || 8;
-  return { width, height: Math.ceil(FONT_SIZE * LINE_HEIGHT) };
+  return { width: ctx.measureText("M").width || 8, height: Math.ceil(FONT_SIZE * LINE_HEIGHT) };
+}
+
+/** True cell size, read from the rendered screen once there is one. */
+function measuredCell(host: HTMLElement, cols: number, rows: number) {
+  const screen = host.querySelector(".xterm-screen") as HTMLElement | null;
+  if (!screen || cols < 1 || rows < 1) return null;
+  const w = screen.offsetWidth / cols;
+  const h = screen.offsetHeight / rows;
+  // Reject nonsense from a mid-layout read rather than caching it forever.
+  if (w < 3 || w > 40 || h < 6 || h > 60) return null;
+  return { width: w, height: h };
 }
 
 /**
@@ -91,40 +100,41 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
 
     let disposed = false;
 
-    /** Size the terminal to the panel, and tell the pty the same numbers. */
     let settled = false;
-    const tryFit = (attempt = 0): void => {
+    let cell = estimateCell();
+
+    /** Size the terminal to the panel, and tell the pty the same numbers. */
+    const fit = (attempt = 0): void => {
       if (disposed) return;
-      // clientWidth/Height are the content box and, with overflow hidden,
-      // are set by the layout rather than by what xterm has drawn.
-      const boxW = host.clientWidth - 24; // horizontal padding
-      const boxH = host.clientHeight - 10; // bottom padding
+
+      // A hidden tab has no size. Fitting against zero would resize the pty
+      // to nothing and force the running program to redraw when it reappears.
+      if (host.offsetParent === null) return;
+
+      const boxW = host.clientWidth - 24;  // horizontal padding
+      const boxH = host.clientHeight - 12; // bottom padding
       if (boxW < 40 || boxH < 20) {
-        if (attempt < 20) requestAnimationFrame(() => tryFit(attempt + 1));
+        if (attempt < 20) requestAnimationFrame(() => fit(attempt + 1));
         return;
       }
-      const cell = cellSize();
+
+      // Prefer what xterm actually drew over what the font suggests.
+      const real = measuredCell(host, term.cols, term.rows);
+      if (real) cell = real;
+
       const cols = Math.max(20, Math.floor(boxW / cell.width));
-      let rows = Math.max(4, Math.floor(boxH / cell.height));
-      if (cols === term.cols && rows === term.rows && settled) return;
+      const rows = Math.max(4, Math.floor(boxH / cell.height));
+      if (settled && cols === term.cols && rows === term.rows) return;
 
       term.resize(cols, rows);
-
-      // The measured cell height is an estimate of what xterm will draw with;
-      // when it rounds differently the last row is clipped, which hides the
-      // agent's own input box. Ask the rendered element instead and shed rows
-      // until it genuinely fits.
-      const screen = host.querySelector(".xterm-screen") as HTMLElement | null;
-      let guard = 0;
-      while (screen && rows > 4 && screen.offsetHeight > boxH && guard++ < 8) {
-        rows -= 1;
-        term.resize(cols, rows);
-      }
-
-      onMetrics?.(`${cols}x${rows}`);
-      lastSize = { cols, rows };
       settled = true;
+      lastSize = { cols, rows };
+      onMetrics?.(`${cols}x${rows}`);
       void invoke("pty_resize", { id: SESSION, cols, rows }).catch(() => {});
+
+      // The first fit runs against an estimate; once there is a rendered
+      // screen to measure, correct it exactly once rather than looping.
+      if (attempt === 0 && !real) requestAnimationFrame(() => fit(1));
     };
 
     const unlisteners: Array<() => void> = [];
@@ -155,7 +165,7 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
         // Font loading is unavailable in some contexts; fall through.
       }
       if (disposed) return;
-      tryFit();
+      fit();
       // Start in the workspace rather than wherever the app happens to be,
       // so the agent has a sensible place to work.
       const cwd = await invoke<string>("workspace_dir").catch(() => undefined);
@@ -170,15 +180,41 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
 
     // Keep the pty's idea of the window in step with the panel, or full-screen
     // programs draw to the wrong size.
-    const resize = () => tryFit();
+    // Coalesce to one fit per frame: a drag fires the observer continuously,
+    // and resizing the pty on every event makes the running program redraw
+    // over and over, which is what reads as flicker.
+    let pending = 0;
+    const resize = () => {
+      if (pending) return;
+      pending = requestAnimationFrame(() => {
+        pending = 0;
+        fit();
+      });
+    };
     const observer = new ResizeObserver(resize);
     observer.observe(host);
     window.addEventListener("resize", resize);
 
+    // Coming back from a hidden tab: the size may not have changed, so the
+    // resize observer stays quiet, but the renderer skipped every update
+    // while it was display:none and needs to be told to repaint.
+    const visibility = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      fit();
+      try {
+        term.refresh(0, term.rows - 1);
+      } catch {
+        // A refresh against a torn-down renderer is not worth failing over.
+      }
+    });
+    visibility.observe(host);
+
     return () => {
       disposed = true;
+      if (pending) cancelAnimationFrame(pending);
       off.dispose();
       observer.disconnect();
+      visibility.disconnect();
       window.removeEventListener("resize", resize);
       unlisteners.forEach((u) => u());
       term.dispose();
