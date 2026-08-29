@@ -3,6 +3,7 @@ import {
 } from "@tauri-apps/plugin-fs";
 import { useDoc, type FileId, type FileState } from "./store";
 import { useViewport } from "../state/viewport";
+import { useUi } from "../state/ui";
 
 const DIR = "canvas";
 const PATH = `${DIR}/state.json`;
@@ -15,6 +16,16 @@ interface PersistedState {
   files: Record<FileId, FileState>;
   fileOrder: FileId[];
   activeFileId: FileId;
+  /** Panel layout. Where someone put their panels is part of their workspace,
+   *  not a transient; losing it on every launch is its own small annoyance. */
+  layout?: {
+    terminalOpen: boolean;
+    terminalDock: "bottom" | "right";
+    agentMode: "agent" | "terminal";
+    panelsHidden: boolean;
+    terminalHeight: number;
+    terminalWidth: number;
+  };
 }
 
 /** The live viewport lives in its own store; fold it back into the active
@@ -29,11 +40,20 @@ function snapshot(): PersistedState {
       viewport: { x: vp.x, y: vp.y, zoom: vp.zoom },
     },
   };
+  const ui = useUi.getState();
   return {
     version: VERSION,
     files,
     fileOrder: s.fileOrder,
     activeFileId: s.activeFileId,
+    layout: {
+      terminalOpen: ui.terminalOpen,
+      terminalDock: ui.terminalDock,
+      agentMode: ui.agentMode,
+      panelsHidden: ui.panelsHidden,
+      terminalHeight: ui.terminalHeight,
+      terminalWidth: ui.terminalWidth,
+    },
   };
 }
 
@@ -79,6 +99,7 @@ export async function loadSaved(): Promise<boolean> {
     });
     const vp = parsed.files[parsed.activeFileId].viewport;
     useViewport.setState({ x: vp.x, y: vp.y, zoom: vp.zoom });
+    if (parsed.layout) useUi.setState(parsed.layout);
     return true;
   } catch (err) {
     console.warn("[persist] load failed; starting fresh", err);
@@ -104,6 +125,7 @@ function schedule() {
 export function startAutosave(): () => void {
   const unsubDoc = useDoc.subscribe(schedule);
   const unsubView = useViewport.subscribe(schedule);
+  const unsubUi = useUi.subscribe(schedule);
 
   const flush = () => {
     if (!dirty) return;
@@ -118,6 +140,7 @@ export function startAutosave(): () => void {
   return () => {
     unsubDoc();
     unsubView();
+    unsubUi();
     window.removeEventListener("beforeunload", flush);
     window.removeEventListener("blur", flush);
   };

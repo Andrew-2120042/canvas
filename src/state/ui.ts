@@ -6,6 +6,12 @@ interface UiStore {
   toggleExpanded: (id: string) => void;
   pagesOpen: boolean;
   togglePages: () => void;
+  /** Hide the left and right panels together, for a wider canvas. One
+   *  control for both: they are two halves of the same "chrome or canvas"
+   *  decision, and separate toggles made that a two-step chore. */
+  panelsHidden: boolean;
+  togglePanels: () => void;
+
   /** Embedded agent terminal panel. */
   terminalOpen: boolean;
   toggleTerminal: () => void;
@@ -34,6 +40,9 @@ export const useUi = create<UiStore>((set) => ({
     set((s) => ({ expanded: { ...s.expanded, [id]: !s.expanded[id] } })),
   pagesOpen: true,
   togglePages: () => set((s) => ({ pagesOpen: !s.pagesOpen })),
+  panelsHidden: false,
+  togglePanels: () => set((s) => ({ panelsHidden: !s.panelsHidden })),
+
   terminalOpen: false,
   toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
   terminalDock: "bottom",

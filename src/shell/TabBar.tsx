@@ -3,6 +3,17 @@ import { useUi } from "../state/ui";
 import { useViewport } from "../state/viewport";
 import { PageIcon, PlusIcon } from "../ui/icons";
 
+/** Panels-collapsed glyph: a frame with both side rails. */
+function PanelsGlyph({ hidden }: { hidden: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"
+         stroke="currentColor" strokeWidth="1.1">
+      <rect x="1.5" y="2.5" width="11" height="9" rx="1.5" />
+      {!hidden && <><path d="M5 2.5v9" /><path d="M9 2.5v9" /></>}
+    </svg>
+  );
+}
+
 /** Prompt glyph for the agent terminal toggle. */
 function TerminalGlyph() {
   return (
@@ -38,6 +49,7 @@ export function TabBar() {
   const activeFileId = useDoc((s) => s.activeFileId);
   const showDashboard = useDoc((s) => s.showDashboard);
   const terminalOpen = useUi((s) => s.terminalOpen);
+  const panelsHidden = useUi((s) => s.panelsHidden);
 
   /** Each file keeps its own viewport, so hand the current one back before
    *  leaving and restore the incoming file's on arrival. */
@@ -92,6 +104,14 @@ export function TabBar() {
       </button>
 
       <div className="tabbar-drag" data-tauri-drag-region />
+
+      <button
+        className={`tab tab--icon${panelsHidden ? " is-active" : ""}`}
+        title={panelsHidden ? "Show panels  ⌘." : "Hide panels  ⌘."}
+        onClick={() => useUi.getState().togglePanels()}
+      >
+        <PanelsGlyph hidden={panelsHidden} />
+      </button>
 
       <button
         className={`tab tab--terminal${terminalOpen ? " is-active" : ""}`}

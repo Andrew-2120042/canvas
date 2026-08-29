@@ -47,6 +47,12 @@ export function useKeyboard() {
     const onKey = (e: KeyboardEvent) => {
       // The terminal toggle works even while typing elsewhere — it is a
       // window-level command, not a canvas one.
+      if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+        e.preventDefault();
+        useUi.getState().togglePanels();
+        return;
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
         e.preventDefault();
         useUi.getState().toggleTerminal();

@@ -18,6 +18,9 @@ interface SessionInfo {
   cwd?: string;
   mcpServers?: Array<{ name: string; status: string }>;
   tools?: string[];
+  /** Slash commands the agent itself advertises, so the menu reflects what
+   *  this agent actually supports rather than a list hardcoded here. */
+  slashCommands?: string[];
 }
 
 interface AgentStore {
@@ -35,6 +38,20 @@ interface AgentStore {
 
 let seq = 0;
 const nextId = () => `b${seq++}`;
+
+/**
+ * Commands offered before the agent has introduced itself.
+ *
+ * The real list arrives on the session's init event — but that only fires
+ * after the first message, so without a fallback the menu is empty exactly
+ * when someone is most likely to reach for it. Replaced wholesale once the
+ * agent reports what it actually supports.
+ */
+const FALLBACK_SLASH_COMMANDS = [
+  "clear", "compact", "config", "context", "cost", "doctor", "help",
+  "init", "login", "logout", "mcp", "memory", "model", "permissions",
+  "review", "status",
+];
 
 /** Tool names are namespaced; show the part a person cares about. */
 export function prettyToolName(name: string): string {
@@ -60,6 +77,9 @@ export const useAgent = create<AgentStore>((set, get) => {
           cwd: event.cwd,
           mcpServers: event.mcp_servers,
           tools: event.tools,
+          slashCommands: event.slash_commands?.length
+            ? event.slash_commands
+            : FALLBACK_SLASH_COMMANDS,
         },
       });
       return;
@@ -136,7 +156,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     running: false,
     busy: false,
     blocks: [],
-    info: {},
+    info: { slashCommands: FALLBACK_SLASH_COMMANDS },
     error: null,
 
     start: async (cwd) => {
