@@ -105,10 +105,23 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
       }
       const cell = cellSize();
       const cols = Math.max(20, Math.floor(boxW / cell.width));
-      const rows = Math.max(4, Math.floor(boxH / cell.height));
-      onMetrics?.(`${cols}x${rows}`);
+      let rows = Math.max(4, Math.floor(boxH / cell.height));
       if (cols === term.cols && rows === term.rows && settled) return;
+
       term.resize(cols, rows);
+
+      // The measured cell height is an estimate of what xterm will draw with;
+      // when it rounds differently the last row is clipped, which hides the
+      // agent's own input box. Ask the rendered element instead and shed rows
+      // until it genuinely fits.
+      const screen = host.querySelector(".xterm-screen") as HTMLElement | null;
+      let guard = 0;
+      while (screen && rows > 4 && screen.offsetHeight > boxH && guard++ < 8) {
+        rows -= 1;
+        term.resize(cols, rows);
+      }
+
+      onMetrics?.(`${cols}x${rows}`);
       lastSize = { cols, rows };
       settled = true;
       void invoke("pty_resize", { id: SESSION, cols, rows }).catch(() => {});

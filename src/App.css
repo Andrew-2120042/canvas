@@ -938,7 +938,9 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  padding: 0 12px 10px;
+  /* The agent draws its input box on the last row, so a clipped row costs the
+     thing you type into. Leave a little more room at the bottom than the top. */
+  padding: 0 12px 12px;
 }
 
 /* xterm draws its own scrollbar track; keep it out of the panel's chrome. */

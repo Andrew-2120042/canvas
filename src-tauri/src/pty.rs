@@ -102,6 +102,17 @@ pub fn pty_spawn(
         std::env::var("HOME").unwrap_or_else(|_| "/".into())
     }));
     cmd.env("TERM", "xterm-256color");
+    // Sessions opened here are their own, not children of whatever launched
+    // the app. Inheriting an agent's session markers turns transcript saving
+    // off, which silently breaks resuming a conversation later.
+    for key in [
+        "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDECODE",
+    ] {
+        cmd.env_remove(key);
+    }
     if let Some(vars) = env {
         for (k, v) in vars {
             cmd.env(k, v);

@@ -91,6 +91,17 @@ pub fn agent_start(
         cmd.args(["--session-id", &session_id]);
     }
 
+    // Same reasoning as the pty: this agent owns its conversation, and an
+    // inherited session marker would stop its transcript being written.
+    for key in [
+        "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDECODE",
+    ] {
+        cmd.env_remove(key);
+    }
+
     let mut child = cmd
         .current_dir(&cwd)
         .stdin(Stdio::piped())
