@@ -71,17 +71,25 @@ export function TerminalDock() {
   const handoff = (command: string) => {
     handedOff.current = true;
     setMode("terminal");
+
     // Resuming a conversation that was never started fails outright, so open
     // the session under this id instead — either way both surfaces share it.
-    const line = hasConversation
-      ? `claude --resume ${sessionId}\n`
-      : `claude --session-id ${sessionId}\n`;
-    void invoke("pty_write", { id: SESSION, data: line }).then(() => {
-      // Give the session a moment to come up before offering the command.
-      setTimeout(() => {
-        void invoke("pty_write", { id: SESSION, data: command }).catch(() => {});
-      }, 2500);
-    }).catch(() => {});
+    const start = hasConversation
+      ? `claude --resume ${sessionId}`
+      : `claude --session-id ${sessionId}`;
+
+    // Clear whatever is sitting at the prompt first. Without this the command
+    // is appended to any half-typed line and the shell runs the concatenation
+    // — a stray "/mcp" turned "claude --resume ..." into "/mcpclaude ...".
+    const write = (data: string) =>
+      invoke("pty_write", { id: SESSION, data }).catch(() => {});
+
+    void write("\x15\x0b").then(() => write(`${start}\n`));
+
+    // Leave the command at the agent's prompt for review rather than sending
+    // it: an interactive session takes a moment to appear, and typing blind
+    // into whatever is on screen is how the last mess happened.
+    setTimeout(() => void write(command), 3000);
   };
 
   /** Returning to the panel after a handoff reloads the conversation. */
