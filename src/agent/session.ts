@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { parsePrompt, type Prompt } from "./prompts";
 import { detectHandoff } from "./handoff";
+import { endAgentBuild } from "../mcp/buildScope";
 
 export const AGENT_SESSION = "main";
 
@@ -61,6 +62,17 @@ const nextId = () => `b${seq++}`;
 let pendingCommand: string | null = null;
 
 /**
+ * Ids of blocks built from streaming deltas, keyed by the content-block index
+ * the agent used.
+ *
+ * The complete `assistant` message arrives after the deltas that composed it,
+ * so without this the same text would render twice. Streamed blocks are
+ * claimed here and the final message reconciles with them instead of
+ * appending.
+ */
+let streamed = new Map<number, string>();
+
+/**
  * Commands offered before the agent has introduced itself.
  *
  * The real list arrives on the session's init event — but that only fires
@@ -91,6 +103,51 @@ export const useAgent = create<AgentStore>((set, get) => {
   const apply = (event: Record<string, any>) => {
     const type = event.type as string;
 
+    // --- token-level streaming ------------------------------------------
+    if (type === "stream_event") {
+      const ev = event.event ?? {};
+
+      if (ev.type === "message_start") {
+        streamed = new Map();
+        return;
+      }
+
+      if (ev.type === "content_block_start") {
+        const block = ev.content_block ?? {};
+        // Tool calls are handled from the complete message: their arguments
+        // arrive as partial JSON, which is not worth rendering half-parsed.
+        if (block.type !== "text" && block.type !== "thinking") return;
+        const id = nextId();
+        streamed.set(ev.index, id);
+        set((s) => ({
+          blocks: [...s.blocks, {
+            kind: block.type === "thinking" ? "thinking" : "text",
+            id,
+            text: block.text ?? block.thinking ?? "",
+          }],
+        }));
+        return;
+      }
+
+      if (ev.type === "content_block_delta") {
+        const id = streamed.get(ev.index);
+        if (!id) return;
+        const delta = ev.delta ?? {};
+        const chunk: string = delta.text ?? delta.thinking ?? "";
+        if (!chunk) return;
+        set((s) => ({
+          blocks: s.blocks.map((b) =>
+            b.id === id && (b.kind === "text" || b.kind === "thinking")
+              ? { ...b, text: b.text + chunk }
+              : b,
+          ),
+        }));
+        return;
+      }
+
+      return;
+    }
+
     if (type === "system" && event.subtype === "init") {
       set({
         info: {
@@ -109,7 +166,39 @@ export const useAgent = create<AgentStore>((set, get) => {
     if (type === "assistant") {
       const content = event.message?.content ?? [];
       const added: Block[] = [];
+      // Reconcile with whatever streamed: the completed text replaces the
+      // accumulated chunks, so a dropped delta cannot leave a gap.
+      const claimed = [...streamed.values()];
+      streamed = new Map();
+      let claimIndex = 0;
+
       for (const c of content) {
+        if ((c.type === "text" || c.type === "thinking") && claimed[claimIndex]) {
+          // Already on screen from the stream; correct it in place.
+          const id = claimed[claimIndex++];
+          const finalText = c.type === "thinking" ? c.thinking : c.text;
+          const parsed = c.type === "text" ? parsePrompt(finalText ?? "") : null;
+          const prompt = parsed
+            ? { ...parsed, command: pendingCommand ?? undefined }
+            : undefined;
+          if (prompt && pendingCommand === "model") {
+            set({ models: prompt.options.map((o) => o.value) });
+          }
+          const handoff = c.type === "text" ? detectHandoff(finalText ?? "") : null;
+          set((st) => ({
+            blocks: st.blocks.map((b) =>
+              b.id === id && (b.kind === "text" || b.kind === "thinking")
+                ? {
+                    ...b, text: finalText ?? b.text,
+                    ...(prompt ? { prompt } : {}),
+                    ...(handoff ? { handoff } : {}),
+                  }
+                : b,
+            ),
+          }));
+          continue;
+        }
+
         if (c.type === "text" && c.text?.trim()) {
           const parsed = parsePrompt(c.text);
           const prompt = parsed
@@ -164,6 +253,8 @@ export const useAgent = create<AgentStore>((set, get) => {
     }
 
     if (type === "result") {
+      // The turn is over, so whatever it built is one finished thing.
+      endAgentBuild();
       set((s) => ({
         busy: false,
         blocks: [...s.blocks, {

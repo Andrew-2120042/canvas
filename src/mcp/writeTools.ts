@@ -1,4 +1,5 @@
 import { activeFile, useDoc } from "../document/store";
+import { noteAgentWrite } from "./buildScope";
 import type { NodeId, NodeType, SceneNode } from "../document/types";
 import { registerTool } from "./bridge";
 
@@ -6,7 +7,12 @@ import { registerTool } from "./bridge";
  *  store actions collapses into a single undo step — matching how the same
  *  change made by hand undoes in one press. */
 let seq = 0;
-const gestureKey = (op: string) => `mcp:${op}:${Date.now()}:${seq++}`;
+const gestureKey = (op: string) => {
+  // Every agent write belongs to the build in progress, so undo takes the
+  // whole attempt back rather than one node at a time.
+  noteAgentWrite();
+  return `mcp:${op}:${Date.now()}:${seq++}`;
+};
 
 /**
  * Write-side tools.
@@ -126,6 +132,7 @@ export function registerWriteTools(): void {
       ? args.ids.map(String)
       : [String(args.id ?? "")];
     ids.forEach(requireNode);
+    noteAgentWrite();
     useDoc.getState().removeNodes(ids);
     return { deleted: ids };
   });
@@ -136,6 +143,7 @@ export function registerWriteTools(): void {
       : [String(args.id ?? "")];
     ids.forEach(requireNode);
     const offset = args.offset === undefined ? 10 : num(args.offset, "offset");
+    noteAgentWrite();
     const made = useDoc.getState().duplicateNodes(ids, offset);
     return { created: made };
   });

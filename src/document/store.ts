@@ -48,6 +48,10 @@ interface History {
   /** Key of the last edit, for coalescing a drag into one step. */
   lastKey: string | null;
   lastAt: number;
+  /** Depth of open build scopes; above zero, edits join one step. */
+  buildDepth: number;
+  /** Whether the current build has already taken its snapshot. */
+  buildOpen: boolean;
 }
 
 const HISTORY_LIMIT = 200;
@@ -95,6 +99,20 @@ interface DocStore {
   distribute: (ids: NodeId[], axis: "h" | "v") => void;
   insertNodes: (nodes: SceneNode[], parent: NodeId | null) => NodeId[];
 
+  /**
+   * Group everything until `endBuild` into a single undo step.
+   *
+   * An agent build is one instruction that happens to produce many writes,
+   * and undoing it should take one press, not one per node. The time-based
+   * coalescing used for drags cannot express this: an agent may pause between
+   * tool calls for longer than any sensible window, and the grouping would
+   * then depend on how fast it happened to think.
+   *
+   * Nests by depth so an inner scope cannot end an outer one early.
+   */
+  beginBuild: () => void;
+  endBuild: () => void;
+
   // history
   undo: () => void;
   redo: () => void;
@@ -136,7 +154,7 @@ const histories = new Map<FileId, History>();
 function historyFor(id: FileId): History {
   let h = histories.get(id);
   if (!h) {
-    h = { past: [], future: [], lastKey: null, lastAt: 0 };
+    h = { past: [], future: [], lastKey: null, lastAt: 0, buildDepth: 0, buildOpen: false };
     histories.set(id, h);
   }
   return h;
@@ -166,12 +184,19 @@ export const useDoc = create<DocStore>((set, get) => {
       if (opts.history !== false) {
         const h = historyFor(s.activeFileId);
         const now = Date.now();
-        const coalesce =
-          opts.key != null && h.lastKey === opts.key && now - h.lastAt < COALESCE_MS;
+
+        // Inside a build, take one snapshot for the whole scope: the first
+        // write records the state to return to, and the rest join it.
+        const inBuild = h.buildDepth > 0;
+        const coalesce = inBuild
+          ? h.buildOpen
+          : opts.key != null && h.lastKey === opts.key && now - h.lastAt < COALESCE_MS;
+
         if (!coalesce) {
           h.past.push(snap(cur));
           if (h.past.length > HISTORY_LIMIT) h.past.shift();
           h.future.length = 0;
+          if (inBuild) h.buildOpen = true;
         }
         h.lastKey = opts.key ?? null;
         h.lastAt = now;
@@ -569,6 +594,30 @@ export const useDoc = create<DocStore>((set, get) => {
         }
         f.doc = { ...f.doc, nodes };
         return f;
+      }),
+
+    beginBuild: () =>
+      set((s) => {
+        const h = historyFor(s.activeFileId);
+        h.buildDepth += 1;
+        // A fresh scope must not join whatever preceded it.
+        if (h.buildDepth === 1) {
+          h.buildOpen = false;
+          h.lastKey = null;
+        }
+        return s;
+      }),
+
+    endBuild: () =>
+      set((s) => {
+        const h = historyFor(s.activeFileId);
+        h.buildDepth = Math.max(0, h.buildDepth - 1);
+        if (h.buildDepth === 0) {
+          h.buildOpen = false;
+          // The next edit starts its own step rather than joining the build.
+          h.lastKey = null;
+        }
+        return s;
       }),
 
     undo: () =>
