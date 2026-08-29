@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useUi } from "../state/ui";
-import { TerminalPanel, SESSION } from "./TerminalPanel";
+import { TerminalPanel, SESSION, runInTerminal } from "./TerminalPanel";
 import { SelectionTags } from "./SelectionTags";
 import { AgentPanel } from "../agent/AgentPanel";
 import { useAgent } from "../agent/session";
@@ -75,21 +75,18 @@ export function TerminalDock() {
     // Resuming a conversation that was never started fails outright, so open
     // the session under this id instead — either way both surfaces share it.
     const start = hasConversation
-      ? `claude --resume ${sessionId}`
-      : `claude --session-id ${sessionId}`;
+      ? ["claude", "--resume", sessionId]
+      : ["claude", "--session-id", sessionId];
 
-    // Clear whatever is sitting at the prompt first. Without this the command
-    // is appended to any half-typed line and the shell runs the concatenation
-    // — a stray "/mcp" turned "claude --resume ..." into "/mcpclaude ...".
-    const write = (data: string) =>
-      invoke("pty_write", { id: SESSION, data }).catch(() => {});
-
-    void write("\x15\x0b").then(() => write(`${start}\n`));
-
-    // Leave the command at the agent's prompt for review rather than sending
-    // it: an interactive session takes a moment to appear, and typing blind
-    // into whatever is on screen is how the last mess happened.
-    setTimeout(() => void write(command), 3000);
+    // Run the agent as the session's own process rather than typing at a
+    // shell prompt. Typing fought whatever was already on the line, and the
+    // shell inserted control characters literally instead of acting on them.
+    void runInTerminal(start, cwd).then(() => {
+      // Offer the command at the agent's prompt, unsent, once it is up.
+      setTimeout(() => {
+        void invoke("pty_write", { id: SESSION, data: command }).catch(() => {});
+      }, 2500);
+    });
   };
 
   /** Returning to the panel after a handoff reloads the conversation. */

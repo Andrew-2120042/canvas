@@ -13,6 +13,29 @@ let active: Terminal | null = null;
 export function focusTerminal(): void {
   active?.focus();
 }
+
+/** Last known geometry, so a respawn keeps the same size. */
+let lastSize = { cols: 80, rows: 24 };
+
+/**
+ * Replace whatever the terminal is running with a specific command.
+ *
+ * Used for the handoff: the interactive agent becomes the session's own
+ * process rather than something typed at a shell prompt, so there is no line
+ * to clear and no control characters to be swallowed.
+ */
+export async function runInTerminal(program: string[], cwd: string): Promise<void> {
+  active?.clear();
+  await invoke("pty_kill", { id: SESSION }).catch(() => {});
+  await invoke("pty_spawn", {
+    id: SESSION,
+    cols: lastSize.cols,
+    rows: lastSize.rows,
+    cwd,
+    program,
+  });
+  active?.focus();
+}
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 1.35;
 const FONT_FAMILY =
@@ -86,6 +109,7 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
       onMetrics?.(`${cols}x${rows}`);
       if (cols === term.cols && rows === term.rows && settled) return;
       term.resize(cols, rows);
+      lastSize = { cols, rows };
       settled = true;
       void invoke("pty_resize", { id: SESSION, cols, rows }).catch(() => {});
     };
@@ -97,7 +121,16 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
         if (e.payload.id === SESSION) term.write(e.payload.data);
       });
       const offExit = await listen<{ id: string }>("pty:exit", (e) => {
-        if (e.payload.id === SESSION) term.write("\r\n\x1b[2m[session ended]\x1b[0m\r\n");
+        if (e.payload.id !== SESSION) return;
+        term.write("\r\n\x1b[2m[session ended]\x1b[0m\r\n");
+        // Leaving the agent should return the shell, not a dead panel.
+        void invoke<string>("workspace_dir")
+          .then((dir) =>
+            invoke("pty_spawn", {
+              id: SESSION, cols: lastSize.cols, rows: lastSize.rows, cwd: dir,
+            }),
+          )
+          .catch(() => {});
       });
       unlisteners.push(offOut, offExit);
       if (disposed) return;
@@ -113,6 +146,7 @@ export function TerminalPanel({ onReady, onMetrics }: { onReady?: () => void; on
       // Start in the workspace rather than wherever the app happens to be,
       // so the agent has a sensible place to work.
       const cwd = await invoke<string>("workspace_dir").catch(() => undefined);
+      lastSize = { cols: term.cols, rows: term.rows };
       await invoke("pty_spawn", { id: SESSION, cols: term.cols, rows: term.rows, cwd });
       onReady?.();
     })();

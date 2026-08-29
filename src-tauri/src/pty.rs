@@ -56,6 +56,12 @@ pub fn workspace_dir() -> Result<String, String> {
     Ok(base.display().to_string())
 }
 
+/// Start a pty session.
+///
+/// `program` runs that command directly instead of the user's shell. Handing
+/// a command to a shell means typing it at a prompt, which fights whatever is
+/// already on the line and mangles control characters — running it as the
+/// session's own process avoids the shell's line editor entirely.
 #[tauri::command]
 pub fn pty_spawn(
     app: AppHandle,
@@ -65,6 +71,7 @@ pub fn pty_spawn(
     rows: u16,
     cwd: Option<String>,
     env: Option<HashMap<String, String>>,
+    program: Option<Vec<String>>,
 ) -> Result<(), String> {
     if state.sessions.lock().unwrap().contains_key(&id) {
         return Ok(()); // already running
@@ -75,11 +82,22 @@ pub fn pty_spawn(
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
 
-    let shell = default_shell();
-    let mut cmd = CommandBuilder::new(&shell);
-    // A login shell so the user's profile is sourced, matching what they get
-    // when they open Terminal themselves.
-    cmd.arg("-l");
+    let mut cmd = match program.as_ref().and_then(|p| p.split_first()) {
+        Some((exe, args)) => {
+            let mut c = CommandBuilder::new(exe);
+            for a in args {
+                c.arg(a);
+            }
+            c
+        }
+        None => {
+            let mut c = CommandBuilder::new(default_shell());
+            // A login shell so the user's profile is sourced, matching what
+            // they get when they open Terminal themselves.
+            c.arg("-l");
+            c
+        }
+    };
     cmd.cwd(cwd.unwrap_or_else(|| {
         std::env::var("HOME").unwrap_or_else(|_| "/".into())
     }));
