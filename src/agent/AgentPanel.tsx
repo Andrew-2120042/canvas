@@ -4,6 +4,9 @@ import { FrameIcon, ImageIcon, RectIcon, TextIcon } from "../ui/icons";
 import { Markdown } from "./markdown";
 import { prettyToolName, useAgent, type Block } from "./session";
 
+/** Models offered before the agent has told us its own list. */
+const DEFAULT_MODELS = ["opus", "sonnet", "haiku", "fable", "best", "default"];
+
 function TypeGlyph({ type }: { type: string }) {
   switch (type) {
     case "frame": return <FrameIcon />;
@@ -75,7 +78,8 @@ function ToolStep({ block }: { block: Extract<Block, { kind: "tool" }> }) {
  * event stream, laid out as a running narrative rather than a stack of cards.
  */
 export function AgentPanel({ cwd }: { cwd: string }) {
-  const { running, busy, blocks, info, error, start, send, stop, clear } = useAgent();
+  const { running, busy, blocks, info, models, error, start, send, stop, clear } = useAgent();
+  const [modelMenu, setModelMenu] = useState(false);
   const [draft, setDraft] = useState("");
   const [menuIndex, setMenuIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -133,7 +137,26 @@ export function AgentPanel({ cwd }: { cwd: string }) {
             case "user":
               return <div key={b.id} className="agent-user">{b.text}</div>;
             case "text":
-              return <div key={b.id} className="agent-text"><Markdown text={b.text} /></div>;
+              return (
+                <div key={b.id} className="agent-text">
+                  <Markdown text={b.text} />
+                  {b.options && b.options.length > 0 && (
+                    <div className="ag-options">
+                      {b.options.map((opt) => (
+                        <button
+                          key={opt}
+                          className="ag-option"
+                          onClick={() =>
+                            submit(b.optionCommand ? `/${b.optionCommand} ${opt}` : opt)
+                          }
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
             case "thinking":
               return <Thinking key={b.id} text={b.text} />;
             case "tool":
@@ -222,7 +245,29 @@ export function AgentPanel({ cwd }: { cwd: string }) {
             }}
           />
           <div className="agent-composer-bar">
-            <span className="ag-meta">{info.model ?? (running ? "ready" : "starting")}</span>
+            <div className="ag-model-wrap">
+              <button
+                className="ag-model-btn"
+                onClick={() => setModelMenu((v) => !v)}
+                title="Change model"
+              >
+                {info.model ?? (running ? "ready" : "starting")}
+                <Chevron open={modelMenu} />
+              </button>
+              {modelMenu && (
+                <div className="ag-model-menu">
+                  {(models.length ? models : DEFAULT_MODELS).map((m) => (
+                    <button
+                      key={m}
+                      className="ag-slash-item"
+                      onClick={() => { setModelMenu(false); submit(`/model ${m}`); }}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <span className="agent-spacer" />
             {blocks.length > 0 && (
               <button className="agent-ghost-btn" onClick={clear}>Clear</button>

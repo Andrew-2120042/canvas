@@ -7,7 +7,14 @@ export const AGENT_SESSION = "main";
 /** One rendered block in the conversation. */
 export type Block =
   | { kind: "user"; id: string; text: string }
-  | { kind: "text"; id: string; text: string }
+  | {
+      kind: "text"; id: string; text: string;
+      /** Choices the agent offered in prose, lifted out so they can be
+       *  clicked instead of retyped. */
+      options?: string[];
+      /** The command those choices belong to, e.g. "model". */
+      optionCommand?: string;
+    }
   | { kind: "thinking"; id: string; text: string }
   | { kind: "tool"; id: string; name: string; input: unknown; status: "running" | "done" | "error"; result?: string }
   | { kind: "notice"; id: string; text: string }
@@ -25,6 +32,8 @@ interface SessionInfo {
 
 interface AgentStore {
   running: boolean;
+  /** Models the agent said it accepts, learned from a /model reply. */
+  models: string[];
   busy: boolean;
   blocks: Block[];
   info: SessionInfo;
@@ -38,6 +47,8 @@ interface AgentStore {
 
 let seq = 0;
 const nextId = () => `b${seq++}`;
+/** The slash command awaiting a reply, so any choices in it can be labelled. */
+let pendingCommand: string | null = null;
 
 /**
  * Commands offered before the agent has introduced itself.
@@ -52,6 +63,25 @@ const FALLBACK_SLASH_COMMANDS = [
   "init", "login", "logout", "mcp", "memory", "model", "permissions",
   "review", "status",
 ];
+
+/**
+ * Pull a list of choices out of an agent's prose.
+ *
+ * Slash commands answer with text like
+ *   "Usage: /model <name>. Available: sonnet, opus, haiku, ..."
+ * which tells a person what they can pick but leaves them to retype it. This
+ * lifts the list so the UI can offer the choices directly.
+ */
+export function extractOptions(text: string): string[] {
+  const m = /Available:\s*([^.\n]+)/i.exec(text);
+  if (!m) return [];
+  return m[1]
+    .split(/,|\bor\b/)
+    .map((p) => p.trim().replace(/^`|`$/g, ""))
+    .filter((p) => p && p.length < 40 && !/\s{2,}/.test(p))
+    // Trailing prose like "or a full model ID" is guidance, not a choice.
+    .filter((p) => !/^a\s|\bID\b/i.test(p));
+}
 
 /** Tool names are namespaced; show the part a person cares about. */
 export function prettyToolName(name: string): string {
@@ -90,7 +120,23 @@ export const useAgent = create<AgentStore>((set, get) => {
       const added: Block[] = [];
       for (const c of content) {
         if (c.type === "text" && c.text?.trim()) {
-          added.push({ kind: "text", id: nextId(), text: c.text });
+          const options = extractOptions(c.text);
+          if (options.length && pendingCommand === "model") {
+            set({ models: options });
+          }
+          // The model label comes from the one-off init event, so a later
+          // /model change would leave it stale. Take the confirmation as the
+          // authority rather than assuming the switch worked.
+          const switched = /Set model to\s*`?([^`\n(]+)`?/i.exec(c.text);
+          if (switched && pendingCommand === "model") {
+            set((st) => ({ info: { ...st.info, model: switched[1].trim() } }));
+          }
+          added.push({
+            kind: "text", id: nextId(), text: c.text,
+            ...(options.length
+              ? { options, optionCommand: pendingCommand ?? undefined }
+              : {}),
+          });
         } else if (c.type === "thinking" && c.thinking?.trim()) {
           added.push({ kind: "thinking", id: nextId(), text: c.thinking });
         } else if (c.type === "tool_use") {
@@ -154,6 +200,7 @@ export const useAgent = create<AgentStore>((set, get) => {
 
   return {
     running: false,
+    models: [],
     busy: false,
     blocks: [],
     info: { slashCommands: FALLBACK_SLASH_COMMANDS },
@@ -180,6 +227,8 @@ export const useAgent = create<AgentStore>((set, get) => {
     send: async (text) => {
       const trimmed = text.trim();
       if (!trimmed || get().busy) return;
+      const slash = /^\/(\w[\w-]*)/.exec(trimmed);
+      pendingCommand = slash ? slash[1] : null;
       set((s) => ({
         busy: true,
         blocks: [...s.blocks, { kind: "user", id: nextId(), text: trimmed }],
