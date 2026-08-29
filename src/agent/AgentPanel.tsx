@@ -3,7 +3,8 @@ import { useActive } from "../document/store";
 import { FrameIcon, ImageIcon, RectIcon, TextIcon } from "../ui/icons";
 import { Markdown } from "./markdown";
 import { prettyToolName, useAgent, type Block } from "./session";
-import { ModelPicker } from "./ModelPicker";
+import { PromptCard } from "./PromptCard";
+import type { Prompt } from "./prompts";
 
 /** Models offered before the agent has told us its own list. */
 const DEFAULT_MODELS = ["opus", "sonnet", "haiku", "fable", "best", "default"];
@@ -85,7 +86,7 @@ export function AgentPanel({ cwd }: { cwd: string }) {
    * inline in the transcript. A prompt buried in scrollback is a prompt that
    * scrolls away mid-answer.
    */
-  const [choice, setChoice] = useState<{ command?: string; options: string[] } | null>(null);
+  const [choice, setChoice] = useState<Prompt | null>(null);
   /** Blocks whose choices have already been offered or dismissed. */
   const seenChoices = useRef(new Set<string>());
   const [draft, setDraft] = useState("");
@@ -108,10 +109,10 @@ export function AgentPanel({ cwd }: { cwd: string }) {
   useEffect(() => {
     for (let i = blocks.length - 1; i >= 0; i--) {
       const b = blocks[i];
-      if (b.kind !== "text" || !b.options?.length) continue;
+      if (b.kind !== "text" || !b.prompt) continue;
       if (seenChoices.current.has(b.id)) break;
       seenChoices.current.add(b.id);
-      setChoice({ command: b.optionCommand, options: b.options });
+      setChoice(b.prompt);
       break;
     }
   }, [blocks]);
@@ -135,8 +136,8 @@ export function AgentPanel({ cwd }: { cwd: string }) {
     setDraft("");
   };
 
-  const choose = (option: string) =>
-    submit(choice?.command ? `/${choice.command} ${option}` : option);
+  const choose = (value: string) =>
+    submit(choice?.command ? `/${choice.command} ${value}` : value);
 
   const pickCommand = (cmd: string) => {
     setDraft(`/${cmd} `);
@@ -205,30 +206,12 @@ export function AgentPanel({ cwd }: { cwd: string }) {
       <div className="agent-composer-wrap">
         {choice && (
           <div className="ag-attached">
-            {choice.command === "model" ? (
-              <ModelPicker
-                models={choice.options}
-                current={info.model}
-                onPick={choose}
-                onCancel={() => setChoice(null)}
-              />
-            ) : (
-              <div className="ag-choice-card">
-                <div className="mp-head">
-                  <span className="mp-title">
-                    {choice.command ? `/${choice.command}` : "Choose"}
-                  </span>
-                  <button className="mp-close" onClick={() => setChoice(null)}>×</button>
-                </div>
-                <div className="ag-options">
-                  {choice.options.map((opt) => (
-                    <button key={opt} className="ag-option" onClick={() => choose(opt)}>
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            <PromptCard
+              prompt={choice}
+              current={info.model}
+              onPick={(o) => choose(o.value)}
+              onCancel={() => setChoice(null)}
+            />
           </div>
         )}
 
@@ -296,7 +279,12 @@ export function AgentPanel({ cwd }: { cwd: string }) {
                   setChoice((c) =>
                     c?.command === "model"
                       ? null
-                      : { command: "model", options: models.length ? models : DEFAULT_MODELS },
+                      : {
+                          command: "model",
+                          question: "Select model",
+                          options: (models.length ? models : DEFAULT_MODELS)
+                            .map((v) => ({ value: v, label: v })),
+                        },
                   )
                 }
                 title="Change model"

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { parsePrompt, type Prompt } from "./prompts";
 
 export const AGENT_SESSION = "main";
 
@@ -9,11 +10,9 @@ export type Block =
   | { kind: "user"; id: string; text: string }
   | {
       kind: "text"; id: string; text: string;
-      /** Choices the agent offered in prose, lifted out so they can be
-       *  clicked instead of retyped. */
-      options?: string[];
-      /** The command those choices belong to, e.g. "model". */
-      optionCommand?: string;
+      /** A question the agent asked in prose, lifted out so it can be
+       *  answered by clicking rather than retyped. */
+      prompt?: Prompt;
     }
   | { kind: "thinking"; id: string; text: string }
   | { kind: "tool"; id: string; name: string; input: unknown; status: "running" | "done" | "error"; result?: string }
@@ -64,25 +63,6 @@ const FALLBACK_SLASH_COMMANDS = [
   "review", "status",
 ];
 
-/**
- * Pull a list of choices out of an agent's prose.
- *
- * Slash commands answer with text like
- *   "Usage: /model <name>. Available: sonnet, opus, haiku, ..."
- * which tells a person what they can pick but leaves them to retype it. This
- * lifts the list so the UI can offer the choices directly.
- */
-export function extractOptions(text: string): string[] {
-  const m = /Available:\s*([^.\n]+)/i.exec(text);
-  if (!m) return [];
-  return m[1]
-    .split(/,|\bor\b/)
-    .map((p) => p.trim().replace(/^`|`$/g, ""))
-    .filter((p) => p && p.length < 40 && !/\s{2,}/.test(p))
-    // Trailing prose like "or a full model ID" is guidance, not a choice.
-    .filter((p) => !/^a\s|\bID\b/i.test(p));
-}
-
 /** Tool names are namespaced; show the part a person cares about. */
 export function prettyToolName(name: string): string {
   const parts = name.split("__");
@@ -120,9 +100,12 @@ export const useAgent = create<AgentStore>((set, get) => {
       const added: Block[] = [];
       for (const c of content) {
         if (c.type === "text" && c.text?.trim()) {
-          const options = extractOptions(c.text);
-          if (options.length && pendingCommand === "model") {
-            set({ models: options });
+          const parsed = parsePrompt(c.text);
+          const prompt = parsed
+            ? { ...parsed, command: pendingCommand ?? undefined }
+            : undefined;
+          if (prompt && pendingCommand === "model") {
+            set({ models: prompt.options.map((o) => o.value) });
           }
           // The model label comes from the one-off init event, so a later
           // /model change would leave it stale. Take the confirmation as the
@@ -131,12 +114,7 @@ export const useAgent = create<AgentStore>((set, get) => {
           if (switched && pendingCommand === "model") {
             set((st) => ({ info: { ...st.info, model: switched[1].trim() } }));
           }
-          added.push({
-            kind: "text", id: nextId(), text: c.text,
-            ...(options.length
-              ? { options, optionCommand: pendingCommand ?? undefined }
-              : {}),
-          });
+          added.push({ kind: "text", id: nextId(), text: c.text, ...(prompt ? { prompt } : {}) });
         } else if (c.type === "thinking" && c.thinking?.trim()) {
           added.push({ kind: "thinking", id: nextId(), text: c.thinking });
         } else if (c.type === "tool_use") {

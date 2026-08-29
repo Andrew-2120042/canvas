@@ -1381,7 +1381,7 @@ body {
 
 /* --- model picker card -------------------------------------------------- */
 
-.mp-card {
+.pc-card {
   width: 100%;
   padding: 12px 14px 10px;
   border: 1px solid var(--border);
@@ -1396,8 +1396,7 @@ body {
   margin: 0 12px -1px;
 }
 
-.ag-attached .mp-card,
-.ag-attached .ag-choice-card {
+.ag-attached .pc-card {
   border-bottom-left-radius: 0;
   border-bottom-right-radius: 0;
   border-bottom-color: transparent;
@@ -1412,28 +1411,31 @@ body {
   background: #2B2B2B;
 }
 
+/* The question sits above its options, both above the input they answer. */
+.pc-title { flex: 1; color: var(--text); font-weight: 500; }
+
 /* The composer keeps square shoulders while a prompt sits on it. */
 .ag-attached + .agent-composer {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
 
-.mp-head { display: flex; align-items: center; }
-.mp-title { flex: 1; color: var(--text); font-weight: 500; }
+.pc-head { display: flex; align-items: center; }
+.pc-title { flex: 1; color: var(--text); font-weight: 500; }
 
-.mp-close {
+.pc-close {
   width: 20px; height: 20px;
   border: 0; border-radius: 4px;
   background: transparent; color: var(--text-dim);
   font-size: 14px; line-height: 1; cursor: default;
 }
-.mp-close:hover { background: var(--bg-row-hover); color: var(--text); }
+.pc-close:hover { background: var(--bg-row-hover); color: var(--text); }
 
-.mp-sub { margin: 2px 0 10px; color: var(--text-dim); font-size: 11px; }
+.pc-sub { margin: 2px 0 10px; color: var(--text-dim); font-size: 11px; }
 
-.mp-list { display: flex; flex-direction: column; gap: 1px; }
+.pc-list { display: flex; flex-direction: column; gap: 1px; }
 
-.mp-row {
+.pc-row {
   display: grid;
   grid-template-columns: 16px minmax(84px, auto) 1fr;
   align-items: baseline;
@@ -1448,13 +1450,13 @@ body {
   cursor: default;
 }
 
-.mp-row.is-active { background: var(--bg-row-selected); }
+.pc-row.is-active { background: var(--bg-row-selected); }
 
-.mp-num { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 11px; }
-.mp-name { color: var(--text); white-space: nowrap; }
-.mp-check { margin-left: 6px; color: #4FB37C; }
+.pc-num { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 11px; }
+.pc-name { color: var(--text); white-space: nowrap; }
+.pc-check { margin-left: 6px; color: #4FB37C; }
 
-.mp-note {
+.pc-note {
   color: var(--text-dim);
   font-size: 11px;
   overflow: hidden;
@@ -1462,7 +1464,7 @@ body {
   white-space: nowrap;
 }
 
-.mp-foot {
+.pc-foot {
   display: flex;
   gap: 14px;
   margin-top: 10px;
