@@ -40,6 +40,18 @@ const CARRIED = [
   "font-weight", "font-style", "font-stretch", "line-height",
   "letter-spacing", "text-align", "text-transform", "text-decoration-line",
   "white-space", "object-fit", "backdrop-filter", "filter", "mix-blend-mode",
+  // Sizing rules that decide a box rather than decorate it. Leaving
+  // aspect-ratio out meant every constrained image lost its constraint and
+  // rendered at its natural height — on a page of photographs that turned a
+  // 6,500px page into a 29,700px one, which is not a subtle failure but was
+  // a silent one. box-sizing decides whether padding is inside the width,
+  // which is the difference between a 280px card and a 320px one.
+  "aspect-ratio", "box-sizing", "object-position", "order", "vertical-align",
+  "text-indent", "word-break", "overflow-wrap", "text-overflow",
+  "border-right-style", "border-bottom-style", "border-left-style",
+  // Gradient text: the fill is transparent and the gradient is clipped to
+  // the glyphs, so losing either leaves a heading invisible or flat.
+  "background-clip", "-webkit-background-clip", "-webkit-text-fill-color",
 ] as const;
 
 /**

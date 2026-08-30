@@ -529,10 +529,40 @@ const INLINE_TAGS = new Set([
   "sup", "code", "kbd", "abbr", "cite", "q", "time", "label", "br", "wbr",
 ]);
 
+/**
+ * Whether an inline element is genuinely a run of words.
+ *
+ * The tag is not enough. `<a>` marks up a word inside a sentence and it also
+ * marks up a nav pill with padding, a background and a radius — same tag,
+ * completely different thing. Collapsing on the tag alone turned four
+ * navigation buttons into one text node reading
+ * "Programs\nAbout\nOur Courts\nGallery", which keeps every word and loses
+ * every pill.
+ *
+ * By this point the cascade has been resolved onto each element, so the
+ * answer is sitting in its own style attribute: something the browser lays
+ * out as a box, or that paints or pads one, is a box.
+ */
+function isInlineRun(el: Element): boolean {
+  const style = parseStyle(el.getAttribute("style") ?? "");
+
+  const display = style.get("display")?.trim();
+  if (display && display !== "inline") return false;
+
+  if (paintsBox(style)) return false;
+
+  // A width or height of its own makes it a box regardless of display.
+  for (const axis of ["width", "height"] as const) {
+    const value = style.get(axis)?.trim();
+    if (value && value !== "auto") return false;
+  }
+  return true;
+}
+
 /** True when every child is inline markup rather than a box. */
 function inlineOnly(el: Element): boolean {
-  return Array.from(el.children).every((c) =>
-    INLINE_TAGS.has(c.tagName.toLowerCase()),
+  return Array.from(el.children).every(
+    (c) => INLINE_TAGS.has(c.tagName.toLowerCase()) && isInlineRun(c),
   );
 }
 
@@ -696,17 +726,42 @@ function sanitiseRuns(el: Element): string {
  * whole heading — is still one uniform run, and keeping markup for it would
  * cost the layer its editable plain text for no gain.
  */
+const RUN_STYLE_PROPS = [
+  "font-style", "font-weight", "font-size", "color", "text-decoration-line",
+  "font-family", "letter-spacing", "background-color", "font-stretch",
+] as const;
+
+/**
+ * Tags that change how their words look without being asked to.
+ *
+ * `<i>` is italic because it is an `<i>`, not because a rule said so. The
+ * resolver deliberately carries only what differs from a bare element of the
+ * same tag — which is right, and means the one property that makes an italic
+ * italic is the one property it never writes down. Comparing style attributes
+ * therefore found nothing to preserve on exactly the markup that needed
+ * preserving, and every emphasised word in every heading came out flat.
+ */
+const FORMATTING_TAGS = new Set([
+  "b", "strong", "i", "em", "u", "s", "mark", "sub", "sup", "code", "kbd",
+  "small", "abbr", "del", "ins",
+]);
+
 function hasMixedRuns(el: Element): boolean {
-  const own = getComputedStyle(el);
+  // Read from the style attribute, not getComputedStyle. These elements come
+  // from DOMParser and are not in any document, so getComputedStyle has
+  // nothing to compute against and answers with blanks — which compared equal
+  // to the parent's blanks, so every run looked uniform and every italic was
+  // thrown away. The resolved cascade is already written onto each element by
+  // this point, which is the thing to compare.
+  const own = parseStyle(el.getAttribute("style") ?? "");
   for (const child of Array.from(el.children)) {
     const tag = child.tagName.toLowerCase();
     if (tag === "br" || tag === "wbr") continue;
-    const style = getComputedStyle(child);
-    for (const prop of [
-      "font-style", "font-weight", "font-size", "color", "text-decoration-line",
-      "font-family", "letter-spacing", "background-color",
-    ]) {
-      if (style.getPropertyValue(prop) !== own.getPropertyValue(prop)) return true;
+    if (FORMATTING_TAGS.has(tag)) return true;
+    const style = parseStyle(child.getAttribute("style") ?? "");
+    for (const prop of RUN_STYLE_PROPS) {
+      const value = style.get(prop);
+      if (value !== undefined && value !== own.get(prop)) return true;
     }
   }
   return false;
@@ -1226,7 +1281,7 @@ export function parseHtml(html: string, containerWidth = 1440): ParseResult {
     let pseudo = 0;
     let runs = 0;
     const walk = (n: ParsedNode): void => {
-      if (n.props.name === "::before" || n.props.name === "::after") pseudo += 1;
+      if (n.name === "::before" || n.name === "::after") pseudo += 1;
       if (n.props.richText) runs += 1;
       for (const c of n.children) walk(c);
     };
