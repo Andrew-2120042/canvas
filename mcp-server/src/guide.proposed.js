@@ -1,37 +1,74 @@
 /**
- * What the agent is told about designing on this canvas.
+ * PROPOSED — diff against guide.js, take what you want.
  *
- * The tools were never the thing holding output quality back. The same model
- * given the same task produces a polished screen or a rough one depending
- * almost entirely on whether it was told to work like a designer: decide a
- * palette and a type scale before drawing, build one group at a time, look at
- * what it made, and fix what does not sit right. None of that is discoverable
- * from a tool schema, so it is stated here.
+ * What changed and why, from the agent's side:
  *
- * INSTRUCTIONS is sent once at connection and is deliberately short — it is
- * spent on every request, so it carries only what changes behaviour. The
- * guide topics carry the depth and are fetched when relevant.
+ * INSTRUCTIONS gained five things it did not tell me to do. In the Paper
+ * build I did all five, and only because Paper's own instructions said to.
+ * Working from the current text I would have skipped every one:
+ *
+ *   1. get_status first. Its own description says "call this first"; nothing
+ *      the agent reads before its first call repeats that.
+ *   2. get_font_info before setting type. The tool exists and is good. Nothing
+ *      says to use it, so type gets set in a family that may silently fall
+ *      back — which is exactly the failure the tool was built to prevent.
+ *   3. Commit to a palette and a type scale before the first write_html.
+ *      This is process, not house style: it says decide once, not what to
+ *      decide. It is the largest single difference between a screen that
+ *      looks designed and one that looks assembled.
+ *   4. create_artboard for a new screen. The tool prefers itself; the
+ *      instructions never mention it, so create_node stays the default.
+ *   5. finish_working when stopping. Same gap — good tool, never requested.
+ *
+ * The per-group check became a named list. "Check it rendered as intended"
+ * is easy to satisfy with a glance. Five named checks have to be answered
+ * one at a time, which is the point.
+ *
+ * A `craft` topic was added. It is deliberately not a house style: no mood
+ * words, no palette tables, no prescribed look. It covers only the things
+ * that are wrong in any style — unreadable contrast, flat hierarchy, uniform
+ * spacing, text too small to read. Drop the topic if you disagree; the rest
+ * of the file does not depend on it.
+ *
+ * INSTRUCTIONS is now ~30% longer, and it is spent on every request. That is
+ * the trade. If it needs to come back down, the first four numbered steps
+ * are the ones earning their place; the editing list could move to a topic.
  */
 
 export const INSTRUCTIONS = `This server is a design canvas. The user is watching it change as you work.
 
-The canvas is real DOM and real CSS. write_html is how you build: you write markup, flexbox lays it out exactly as a browser would, and one call carries a whole visual group rather than a single box. Do not place a design node by node — and do not go the other way and emit the whole screen at once either. See rule 2.
+The canvas is real DOM and real CSS. write_html is how you build: one call carries a whole component, and flexbox lays it out exactly as a browser would. Do not place a design node by node.
 
 Images: put an absolute file path in <img src>. The app reads the file. Never base64 one into a data URL and never downscale one to make it fit — that destroys the image and costs thousands of tokens for something a path does in forty characters.
 
-How to work here:
+## Before the first write_html
 
-1. Read first — get_tree_summary for the page, get_selection for what the user is looking at.
-2. Build ONE visual group per write_html call — a header, a card, one row, a footer. Not a whole screen, and not a whole component: a card with a header, four rows and a footer is six calls. The user is watching the canvas as you work; a design that lands all at once after a minute of silence is a black box they can neither follow nor interrupt. If a single call is getting long, that is the signal to split it.
-3. Look at what you made. get_screenshot after each group and check it actually rendered as intended: nothing clipped, nothing overlapping, columns lining up between rows. Fix it before moving on.
-4. Read ignoredCss in every write_html result. Anything listed there did not take effect.
-5. get_layout before get_screenshot. "Did the frame hug its content, is anything clipped, do the columns line up" are questions about numbers, and get_layout answers them as text for a fraction of what an image costs. Screenshot when the question is genuinely how something looks.
-6. find_nodes to locate something by name, text or type — it costs the matches, not the page. Reach for it before get_canvas_state.
-7. move_nodes to restructure and set_text_content to retext — both keep node ids, so rewriting HTML for either is wasted work.
-8. focus_node to show the user what you are talking about.
-9. get_jsx when the design needs to become code — it emits the same styles the canvas renders with.
+1. get_status — the open file, its artboards and their sizes, the fonts already in use, the selection. Artboard width is what tells you whether this is a phone or a desktop.
+2. get_font_info on any family you intend to set. A family that is not installed does not error; it silently falls back, and the type you designed is not the type that renders.
+3. Decide a palette and a type scale, and say what you chose before you build. Two or three colours and four or five sizes, chosen once and used throughout, is most of what separates a designed screen from an assembled one.
+4. create_artboard for a new screen — it is placed clear of existing work and lays its children out in flow. Prefer it over create_node.
 
-Two mechanical rules that cause most misalignment here:
+## While building
+
+5. One visual group per write_html call — a header, a card, a list. Not a whole screen in one shot. The user is watching it appear.
+6. Read ignoredCss in every result. Anything listed there did not take effect.
+7. get_layout before get_screenshot. "Did it fit, is anything clipped, do the columns line up" are questions about numbers, and get_layout answers them as text for a fraction of what an image costs. Screenshot when the question is genuinely how something looks.
+8. Check each group before starting the next, against all five: spacing even and rhythmic; hierarchy clear between heading, body and caption; contrast readable at a glance; columns aligned across repeated rows; nothing clipped at a frame edge. Fix what is wrong now, not at the end.
+
+## Editing what is already there
+
+9. find_nodes to locate something by name, text or type — it costs the matches, not the page. Reach for it before get_canvas_state.
+10. move_nodes to restructure, set_text_content to retext, update_nodes to restyle. All three keep node ids, so rewriting HTML for any of them is wasted work.
+11. <x-clone node-id="…"/> inside write_html repeats a node that already exists. Twelve identical rows cost twelve lines, not twelve blocks.
+12. focus_node to show the user what you are talking about.
+13. get_jsx when the design needs to become code — it emits the same styles the canvas renders with.
+
+## When you stop
+
+Call finish_working, so the user can tell a finished design from one that stopped halfway.
+
+## Two mechanical rules that cause most misalignment here
+
 - In a row of repeated items, give icons and trailing controls a fixed width with flex-shrink:0, and let the text column take the rest with flex:1 and min-width:0. Gap alone does not align columns across rows.
 - A frame with a fixed height clips. If content outgrows it, set sizeH to "auto" so it hugs, rather than guessing a taller number.
 
@@ -62,6 +99,13 @@ those and the node changes width — which is what moves a row out of alignment.
 Give a text node that shares a row with other elements an explicit width, or
 flex:1 with min-width:0, rather than letting it size itself.
 
+## Fonts fail silently
+A family that is not installed does not raise anything — the text renders in a
+fallback, at different widths, and the design you checked is not the design
+that shipped. get_font_info before setting type for the first time. It also
+reports the weights that are genuinely distinct and whether a real italic
+exists, so you can use them with confidence rather than guessing.
+
 ## Write ordinary CSS
 This canvas renders real DOM with real CSS. Properties without special
 handling are passed to the browser unchanged, so they behave exactly as they
@@ -71,52 +115,39 @@ and anything else you would normally reach for.
 ignoredCss lists only what genuinely could not be applied, and is normally
 empty. Read it when it is not.`,
 
-  building: `# How to build here
+  craft: `# Craft
 
-The canvas is in front of the user while you work. That is the whole reason
-this reads the way it does — everything below follows from someone watching.
+Not a house style — this server has none, and the look is yours to choose.
+These are the things that read as wrong in any style.
 
-## One visual group per call
-A write_html call should add one thing a person would name: a header, a card,
-a single row, a footer. Not a screen. Not a whole component either — a card
-with a header, four rows and a footer is six calls, not one.
+## Hierarchy is size and weight, not just position
+A screen where the heading, the body and the caption are 24, 18 and 16 has no
+hierarchy; it has three similar greys. Put real distance between the levels —
+a display size that is several times the caption size — and let the small text
+stay genuinely small. Contrast of scale is what makes a page scannable before
+it is read.
 
-Two reasons, and the second is the one that matters:
+## Spacing carries meaning
+Uniform spacing everywhere tells the reader nothing. Tighten it between things
+that belong together — a label and its value, a heading and its subhead — and
+open it up between groups. The gap is the grouping.
 
-The user sees a design assemble instead of waiting through a minute of nothing
-and then being handed a finished page. A build they can watch is one they can
-interrupt when it is going the wrong way, which is the only cheap moment to
-redirect it.
+## Contrast is not negotiable
+Muted text is a legitimate tool for hierarchy and is easy to overspend. Ask of
+every colour pairing whether it reads at a glance, without squinting, and give
+anything under 16px more contrast than feels necessary. Style and legibility
+are never actually in tension; if they seem to be, the style is wrong.
 
-And you see each group land before you commit to the next. A mistake in the
-third of six calls costs one call to fix. The same mistake inside a single
-call that built everything costs the whole screen, because there is no way to
-fix a part of a call you have already made.
+## Restraint
+When choosing between adding an element and removing one, remove. White space
+is a feature. One deliberate accent colour is stronger than four competing
+ones. A page that does less, more precisely, reads as more considered.
 
-If a call is getting long, that is the signal to split it, not to push on.
-
-## Look at what you built
-After each group, check it before moving on:
-- get_layout answers "does it fit, did the frame hug, is anything clipped,
-  do the columns line up" as text, for a fraction of an image.
-- get_screenshot when the question is genuinely how it looks.
-- ignoredCss in the write_html result lists declarations that did not take
-  effect. It is normally empty; read it when it is not.
-
-Fix what is wrong in the group you just made, while it is one call's worth of
-markup, before you build on top of it.
-
-## Edit rather than rewrite
-Every write_html result hands back the id of every node it made. Those ids are
-how you change one thing without re-emitting the design around it:
-- set_text_content to retext, update_nodes to restyle, move_nodes to
-  restructure, rename_nodes to label — all keep node identity.
-- find_nodes locates something by name, text or type without reading the page.
-- <x-clone node-id="…"/> repeats a node you already built instead of
-  describing it again.
-
-Rewriting a section's HTML to change one number throws away the user's
-selection and undo history along with the nodes.`,
+## Do not repeat a grid
+Equal cards in an equal grid at equal weight is the default output shape, and
+it looks like default output. Vary something deliberately — one card larger,
+one column wider, one heading much bigger than the rest — so the eye is given
+somewhere to land first.`,
 
   layout: `# Layout
 
@@ -146,6 +177,12 @@ a percentage, but what renders is the percentage.
 
 ## Frames that clip
 Artboard height is a starting point. When content grows past it the frame clips — a half-cut title is the usual symptom. Remove the height so the frame hugs its content, or set the height once you know the real number. Do not guess a bigger one.
+
+## Check the numbers, not the picture
+get_layout returns every box plus a flat list of anything overflowing or
+clipped, as text. Ask it first. A screenshot costs tokens in proportion to its
+pixels and answers a different question — how something looks, not whether it
+fits.
 `,
 
   css: `# CSS

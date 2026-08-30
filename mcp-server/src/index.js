@@ -28,11 +28,16 @@ function buildServer() {
     {
       title: "Get guide",
       description:
-        "How to design well on this canvas: colour, type, spacing, flex " +
-        "layout, the exact CSS supported, and how to draw icons. Read this " +
-        "before your first build. Omit topic for all of it.",
+        "How to work on this canvas: how to sequence a build so the user can " +
+        "watch it, what the renderer supports and where it differs from a " +
+        "browser, flex layout, and how to draw icons. Read `building` before " +
+        "your first build — it is the one that changes how you should work. " +
+        "Omit topic for all of it.",
       inputSchema: {
-        topic: z.enum(["design-basics", "layout", "css", "icons"]).optional(),
+        topic: z
+          .enum(["building", "design-basics", "layout", "css", "icons"])
+          .optional()
+          .describe("`building` is how to sequence calls and verify each group — read it first."),
       },
     },
     async (args) => ({ content: [{ type: "text", text: guide(args?.topic) }] }),
@@ -461,8 +466,14 @@ function buildServer() {
         "file itself. Never base64 a local image into a data URL and never " +
         "shrink one to make it fit; a path costs about forty characters and " +
         "keeps the picture at full resolution. " +
-        "One call can carry a whole screen; prefer it over building a design " +
-        "node by node. Real flexbox is supported (display:flex, " +
+        "IMPORTANT: write incrementally. One call builds one visual group — " +
+        "a header, a card, one row of a list, a footer. Not a whole screen, " +
+        "and not a whole component either: a card with a header, four rows " +
+        "and a footer is six calls, not one. The user is watching the canvas " +
+        "as you work, and a design that appears all at once after a minute " +
+        "of silence is a black box they cannot follow or interrupt. Build " +
+        "the group, look at it, then build the next one. Still do not place " +
+        "a design node by node — the unit is a group, not a box. Real flexbox is supported (display:flex, " +
         "flex-direction, gap, flex-wrap, justify-content, align-items, " +
         "align-self, flex-grow, flex-shrink, the flex shorthand, padding), " +
         "along with background colours and linear/radial gradients, border " +
