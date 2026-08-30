@@ -187,6 +187,60 @@ function buildServer() {
   );
 
   server.registerTool(
+    "find_nodes",
+    {
+      title: "Find nodes",
+      description:
+        "Find nodes by name, by text content, or by type, without reading " +
+        "the tree. Give any combination — they narrow each other. Returns " +
+        "each match's id, name, type and world box, which is what you need " +
+        "to then edit or focus it. Prefer this over get_canvas_state when " +
+        "you are looking for something specific: it costs the matches " +
+        "rather than the page. Scoped to the current page unless nodeId " +
+        "names a subtree.",
+      inputSchema: {
+        name: z.string().optional()
+          .describe("Substring of the layer name, case-insensitive."),
+        text: z.string().optional()
+          .describe("Substring of a text node's content, case-insensitive."),
+        type: z.enum(["frame", "rect", "text", "image", "path", "svg"]).optional()
+          .describe("Only nodes of this type."),
+        nodeId: z.string().optional()
+          .describe("Search inside this subtree. Omit to search the page."),
+        limit: z.number().optional()
+          .describe("Most matches to return. Default 50, max 200. `truncated` says whether any were cut."),
+      },
+    },
+    async (args) => text(await bridge.call("find_nodes", args)),
+  );
+
+  server.registerTool(
+    "get_jsx",
+    {
+      title: "Get JSX",
+      description:
+        "Export a design as React or HTML — this is how what is on the " +
+        "canvas becomes code in a codebase. Styles are read from the same " +
+        "functions that paint the canvas, so geometry, spacing and colour " +
+        "match the design rather than approximating it. Type inherits from " +
+        "wherever you paste it unless the design set a font-family, so " +
+        "glyphs can differ. Inline <svg> icons come out as real markup with JSX " +
+        "attribute names. Pass nodeId for one component, or omit it for the " +
+        "whole page. Local image paths are emitted as written and need " +
+        "moving into the project's assets.",
+      inputSchema: {
+        nodeId: z.string().optional()
+          .describe("Subtree to export. Omit for the whole page."),
+        format: z.enum(["jsx", "html"]).optional()
+          .describe("React JSX with a style object (default), or plain HTML with style attributes."),
+        component: z.boolean().optional()
+          .describe("JSX only. Wrap the markup in an exported function component, named from the layer. Default true."),
+      },
+    },
+    async (args) => text(await bridge.call("get_jsx", args)),
+  );
+
+  server.registerTool(
     "get_layout",
     {
       title: "Get layout",

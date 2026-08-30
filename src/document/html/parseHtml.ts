@@ -30,6 +30,16 @@ export interface ParsedNode {
    * Resolved when the tree is built, since only the store knows the source.
    */
   cloneOf?: string;
+  /**
+   * True when `sizeW: "fill"` came from this element being block-level with
+   * no width of its own, rather than from an explicit `width: 100%`.
+   *
+   * A block element fills its container — but only in flow. As a flex item in
+   * a row it shrink-wraps instead, and the difference is invisible from
+   * inside the element: only its parent knows. So the rule is applied here
+   * and revisited by whichever parent turns out to be laying it out.
+   */
+  blockFill?: boolean;
 }
 
 export interface ParseResult {
@@ -656,11 +666,15 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
     unmapped.add(`display: ${display.trim()}`);
   }
 
-  // An element with no display of its own is a block, and a block lays its
-  // children out rather than leaving them to position themselves. Recording
-  // that keeps HTML behaving like HTML without changing what a hand-drawn
-  // frame does, which stays absolute.
-  if (!display && BLOCK_TAGS.has(tag)) props.layout = "flow";
+  // A block lays its children out rather than leaving them to position
+  // themselves, whether it says so or is a block by default. Reading only
+  // the absent case meant an explicit `display: block` produced a frame that
+  // positioned its children absolutely — so it did not grow to fit them, and
+  // a padded box came out the height of its padding. Which is precisely what
+  // this parser is handed when it reads back markup this app exported.
+  const declaredBlock =
+    display === "block" || display === "flow-root" || display === "inline-block";
+  if (declaredBlock || (!display && BLOCK_TAGS.has(tag))) props.layout = "flow";
 
   if (style.get("display") === "flex" || style.get("display") === "inline-flex") {
     const dir = style.get("flex-direction")?.trim();
@@ -727,6 +741,7 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
 
   // Width and height: a length is fixed, 100% fills the parent, absent means
   // content decides.
+  let blockFill = false;
   const w = size(style.get("width"), "width", unmapped);
   const h = size(style.get("height"), "height", unmapped);
   props.sizeW = w.mode;
@@ -746,6 +761,7 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
       .includes(style.get("display")?.trim() ?? "")
   ) {
     props.sizeW = "fill";
+    blockFill = true;
   }
   if (w.value !== undefined) props.width = w.value;
   if (h.value !== undefined) props.height = h.value;
@@ -992,7 +1008,21 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
             .map((c) => convert(c, unmapped))
             .filter((c): c is ParsedNode => c !== null);
 
-  return { type, name, props, children };
+  // A block element fills its container in flow, and shrink-wraps as an item
+  // in a flex row — same markup, different answer, decided by the parent.
+  // Down a column it keeps filling, because that is the cross axis and the
+  // default `align-items: stretch` genuinely does stretch it.
+  const flexDir = props.flex?.direction ?? "row";
+  if (props.layout === "flex" && !flexDir.startsWith("column")) {
+    for (const child of children) {
+      if (child.blockFill) {
+        child.props.sizeW = "auto";
+        child.blockFill = false;
+      }
+    }
+  }
+
+  return { type, name, props, children, blockFill };
 }
 
 /**

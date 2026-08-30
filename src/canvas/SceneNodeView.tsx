@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { useActive, useDoc } from "../document/store";
 import { useActivity } from "../state/activity";
-import { childLayoutOf, gradientCss, layoutCss, nodeCss, rgba, type ParentLayout } from "../document/style";
+import { childLayoutOf, renderStyle, rgba, type ParentLayout } from "../document/style";
 import { PathView } from "./PathView";
 import { imageSrc } from "./assetSrc";
 import type { NodeId } from "../document/types";
@@ -92,25 +92,9 @@ function SceneNodeViewInner({
       data-node-id={node.id}
       style={{
         ...(delay !== null ? { animationDelay: `${delay}ms` } : {}),
-        ...nodeCss(node),
-        ...layoutCss(node, parentLayout),
-        // Text sizes to its content unless it was given a fixed box.
-        ...(isText && (node.sizeH ?? "fixed") === "fixed"
-          ? { height: undefined, minHeight: node.height }
-          : {}),
-        // A picture wins over a flat fill, on any node type — a frame with a
-        // photograph behind its children is the ordinary way a hero is built.
-        background: isText || isPath || isSvg
-          ? "transparent"
-          : node.src
-            ? `url("${imageSrc(node.src)}") ${node.backgroundPosition ?? "center"}/` +
-              `${node.backgroundFit ?? "cover"} no-repeat`
-            : node.gradient
-              ? gradientCss(node.gradient)
-              : rgba(node.fill, 1),
-        color: isText ? node.fill : undefined,
-        opacity: node.opacity,
-        overflow: node.clipContent ? "hidden" : undefined,
+        // One definition of how a node looks, shared with the code exporter
+        // so the design and its export cannot disagree. See style.ts.
+        ...renderStyle(node, parentLayout, imageSrc),
       }}
     >
       {node.guides?.visible && (

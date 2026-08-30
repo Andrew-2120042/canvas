@@ -344,6 +344,60 @@ export function nodeCss(node: SceneNode): CSSProperties {
 }
 
 /** Every colour used in a subtree, with usage counts, most-used first. */
+/**
+ * Everything a node renders with, in one place.
+ *
+ * There used to be two halves to this: `nodeCss` and `layoutCss` returned
+ * most of it, and the canvas component added fill, text colour, opacity and
+ * clipping itself, inline. That was invisible until something other than the
+ * canvas needed to know how a node looks — the code exporter read the two
+ * functions, got no colours at all, and produced a black-on-black card that
+ * looked nothing like the design.
+ *
+ * A second reader is the whole point of the product: the design has to leave
+ * as code. So composition happens here, once, and the canvas and the exporter
+ * are both callers. Whatever the canvas paints is what the export says,
+ * because it is the same object.
+ *
+ * `imageSrc` exists because the two readers want different spellings of the
+ * same picture — the webview needs an asset URL it is allowed to load, and
+ * exported code needs the path the user actually wrote. That is the only
+ * thing they are permitted to disagree about.
+ */
+export function renderStyle(
+  node: SceneNode,
+  parent: ParentLayout,
+  imageSrc: (src: string) => string | undefined = (s) => s,
+): CSSProperties {
+  const isText = node.type === "text";
+  const isPath = node.type === "path";
+  const isSvg = node.type === "svg";
+
+  const style: CSSProperties = {
+    ...nodeCss(node),
+    ...layoutCss(node, parent),
+    // Text sizes to its content unless it was given a fixed box.
+    ...(isText && (node.sizeH ?? "fixed") === "fixed"
+      ? { height: undefined, minHeight: node.height }
+      : {}),
+    // A picture wins over a flat fill, on any node type — a frame with a
+    // photograph behind its children is the ordinary way a hero is built.
+    background:
+      isText || isPath || isSvg
+        ? "transparent"
+        : node.src
+          ? `url("${imageSrc(node.src)}") ${node.backgroundPosition ?? "center"}/` +
+            `${node.backgroundFit ?? "cover"} no-repeat`
+          : node.gradient
+            ? gradientCss(node.gradient)
+            : rgba(node.fill, 1),
+    color: isText ? node.fill : undefined,
+    opacity: node.opacity,
+    overflow: node.clipContent ? "hidden" : undefined,
+  };
+  return style;
+}
+
 export function selectionColours(
   nodes: Record<string, SceneNode>,
   rootIds: string[],

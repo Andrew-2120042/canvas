@@ -202,6 +202,80 @@ export function registerReadTools(): void {
     return node;
   });
 
+  /**
+   * Finding a node without reading the document.
+   *
+   * The alternative is pulling a tree and scanning it, which costs the whole
+   * page to answer a question about one node — and gets worse exactly as the
+   * design gets big enough for the question to be worth asking. Matching here
+   * means the reply carries the matches and nothing else.
+   */
+  registerTool("find_nodes", (args) => {
+    const f = activeFile();
+    const doc = f.doc;
+
+    const text = args.text === undefined ? null : String(args.text).toLowerCase();
+    const name = args.name === undefined ? null : String(args.name).toLowerCase();
+    const type = args.type === undefined ? null : String(args.type);
+    const limit = Math.max(1, Math.min(200, Number(args.limit ?? 50)));
+
+    if (text === null && name === null && type === null) {
+      throw new Error("give at least one of name, text or type to search for");
+    }
+
+    // A search scoped to a subtree only walks that subtree; otherwise the
+    // current page, because a match on a page the user is not looking at is
+    // rarely the one meant.
+    const roots: NodeId[] = args.nodeId
+      ? [String(args.nodeId)]
+      : doc.pages[f.currentPageId]?.children ?? [];
+    for (const id of roots) {
+      if (!doc.nodes[id]) throw new Error(`no node with id "${id}"`);
+    }
+
+    const hits: Array<Record<string, unknown>> = [];
+    let truncated = false;
+
+    const walk = (id: NodeId): void => {
+      const n = doc.nodes[id];
+      if (!n) return;
+      if (hits.length >= limit) { truncated = true; return; }
+
+      const matches =
+        (type === null || n.type === type) &&
+        (name === null || n.name.toLowerCase().includes(name)) &&
+        (text === null ||
+          (n.type === "text" && (n.text ?? "").toLowerCase().includes(text)));
+
+      if (matches) {
+        const box = worldRect(doc, id);
+        const hit: Record<string, unknown> = {
+          id: n.id,
+          type: n.type,
+          name: n.name,
+          parent: n.parent,
+          box: box
+            ? [Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)]
+            : null,
+        };
+        // The matched words, so a caller searching by text can tell which of
+        // several similar nodes it found without a second call for each.
+        if (n.type === "text") hit.text = n.text;
+        hits.push(hit);
+      }
+      for (const child of n.children) walk(child);
+    };
+    for (const root of roots) walk(root);
+
+    return {
+      count: hits.length,
+      // Said explicitly: a caller that cannot tell a complete result from a
+      // capped one will act on the first few and believe it saw everything.
+      truncated,
+      nodes: hits,
+    };
+  });
+
   registerTool("get_layout", (args) => {
     const f = activeFile();
     const page = f.doc.pages[f.currentPageId];
