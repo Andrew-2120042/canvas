@@ -1,7 +1,10 @@
 import { create } from "zustand";
 
 export const MIN_ZOOM = 0.02;
-export const MAX_ZOOM = 64;
+/* Scale stays layout-accurate at rest however far in it goes — see the note
+   in CanvasRegion — so the ceiling is set by what is useful, not by where the
+   renderer gives up. */
+export const MAX_ZOOM = 256;
 
 /** Screen-space pan in CSS px, plus a scale factor. World -> screen is
  *  `screen = world * zoom + pan`. */
