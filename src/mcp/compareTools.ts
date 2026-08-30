@@ -53,6 +53,44 @@ interface Region {
   differing: number;
 }
 
+/**
+ * Take the photographs out of both sides, identically.
+ *
+ * "Excluded" has to mean excluded on both sides or the measurement is worse
+ * than useless. The canvas side draws its pictures in a separate pass that
+ * this comparison does not run, so its photographs were already absent; the
+ * source side still had its <img> tags, which either render or — above the
+ * rasteriser's size limit — fail and collapse to nothing, taking everything
+ * below them up the page. Either way the diff would have been dominated by an
+ * asymmetry that is not a difference between the designs.
+ *
+ * An image keeps its box and loses its content, so a picture that is the
+ * wrong SIZE still registers as a difference — which is a conversion error —
+ * while a picture that is the same size registers as none, which is the
+ * truth. Gradients are deliberately left alone: `background-image` covers
+ * both, and a gradient scrim is exactly the sort of thing this is here to
+ * catch.
+ */
+function neutralisePhotos(live: Element, target: Element): void {
+  const liveEls = [live, ...Array.from(live.querySelectorAll("*"))];
+  const targetEls = [target, ...Array.from(target.querySelectorAll("*"))];
+  for (let i = 0; i < targetEls.length && i < liveEls.length; i += 1) {
+    const el = targetEls[i] as HTMLElement;
+    if (!el.style) continue;
+    if (el.tagName.toLowerCase() === "img") {
+      // Hidden, not removed: visibility keeps the box in the layout.
+      el.style.visibility = "hidden";
+      continue;
+    }
+    const computed = getComputedStyle(liveEls[i]);
+    const bg = computed.getPropertyValue("background-image");
+    if (bg && bg.includes("url(")) {
+      // Only the picture. A gradient in the same declaration survives.
+      el.style.backgroundImage = bg.replace(/url\([^)]*\)/g, "none");
+    }
+  }
+}
+
 /** Pixels of one rasterised side, at the comparison size. */
 async function rasterise(
   html: string,
@@ -102,6 +140,9 @@ export function registerCompareTools(): void {
     document.body.appendChild(probe);
     void probe.offsetWidth;
     const sourceHeight = Math.max(1, Math.round(probe.scrollHeight));
+    // Measured before the photographs come out, so the height is the real
+    // page's height rather than one distorted by hiding things.
+    neutralisePhotos(probe, probe);
     const sourceMarkup = probe.innerHTML;
     probe.remove();
 
@@ -116,6 +157,9 @@ export function registerCompareTools(): void {
     const clone = el.cloneNode(true) as HTMLElement;
     settle(clone);
     clone.style.margin = "0";
+    // The clone is detached, so it has no computed styles of its own; the
+    // live element it was copied from is walked alongside it to supply them.
+    neutralisePhotos(el, clone);
     const canvasMarkup =
       `<div style="position:relative;width:${width}px;height:${common}px;overflow:hidden">` +
       clone.outerHTML +

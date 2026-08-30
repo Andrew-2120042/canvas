@@ -6,6 +6,7 @@ import { z } from "zod";
 import { AppBridge } from "./appBridge.js";
 import { INSTRUCTIONS, guide, guideTopics } from "./guide.js";
 import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 
 const PORT = Number(process.env.CANVAS_MCP_PORT ?? process.argv[2] ?? 4319);
 /** Loopback only. This server is one user's own agent talking to their own
@@ -15,6 +16,49 @@ const HOST = "127.0.0.1";
 const bridge = new AppBridge();
 
 /** A fresh MCP server per session, all sharing the one app bridge. */
+/**
+ * A page's own files, brought with it.
+ *
+ * The comparison sends markup across to the app as a string, and a string
+ * leaves its directory behind. A page that keeps its design in `style.css`
+ * and its pictures in `img/` would arrive unstyled with every reference
+ * broken — and would then be measured against the reproduction and reported
+ * as wholly different, which is an artefact of the transport rather than
+ * anything about the conversion. Worse, it would be a quiet artefact: a
+ * single-file page compares fine, so nothing would ever reveal it.
+ *
+ * Stylesheets are inlined, because those decide the design. Everything else
+ * that points at a file is rewritten to an absolute path, which is what the
+ * app already knows how to load.
+ */
+async function resolveRelativeRefs(html, base) {
+  const external = (url) =>
+    url && !/^(https?:|data:|file:|#|\/\/)/i.test(url);
+
+  // <link rel="stylesheet" href="..."> becomes the stylesheet itself.
+  const links = [...html.matchAll(/<link\b[^>]*>/gi)];
+  for (const [tag] of links) {
+    if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) continue;
+    const href = /href\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
+    if (!external(href)) continue;
+    try {
+      const css = await readFile(resolve(base, href), "utf8");
+      html = html.replace(tag, `<style>${css}</style>`);
+    } catch {
+      // A stylesheet that cannot be read is left as it was; saying so is the
+      // diff's job, and guessing at its contents would be worse.
+    }
+  }
+
+  // Anything else pointing at a file on disk gets the full path.
+  html = html.replace(
+    /\b(src|href)\s*=\s*["']([^"']+)["']/gi,
+    (whole, attr, url) =>
+      external(url) ? `${attr}="${resolve(base, url)}"` : whole,
+  );
+  return html;
+}
+
 function buildServer() {
   const server = new McpServer(
     { name: "canvas", version: "0.1.0" },
@@ -289,6 +333,7 @@ function buildServer() {
       } catch (err) {
         throw new Error(`could not read "${path}": ${err.message}`);
       }
+      sourceHtml = await resolveRelativeRefs(sourceHtml, dirname(path));
       return text(await bridge.call("compare_to_source", {
         nodeId: args.nodeId,
         sourceHtml,
