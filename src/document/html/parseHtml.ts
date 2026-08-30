@@ -508,6 +508,67 @@ function isTextOnly(el: Element): boolean {
   return (el.textContent ?? "").trim().length > 0;
 }
 
+/**
+ * Declarations that make an element a box rather than a run of text.
+ *
+ * A text node in this model has no background: its `fill` is the glyph
+ * colour. So these cannot survive being folded into one, and an element
+ * carrying any of them has to stay a frame.
+ */
+const BOX_PROPS = new Set([
+  "background", "background-color", "background-image",
+  "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+  "border", "border-top", "border-right", "border-bottom", "border-left",
+  "border-width", "border-color", "border-style",
+  "border-radius", "box-shadow",
+]);
+
+/** True when the element paints or pads a box of its own. */
+function paintsBox(style: Map<string, string>): boolean {
+  for (const [key, value] of style) {
+    if (!BOX_PROPS.has(key)) continue;
+    const v = value.trim().toLowerCase();
+    if (v && v !== "none" && v !== "transparent" && v !== "0") return true;
+  }
+  return false;
+}
+
+/**
+ * The words inside a box, as their own node.
+ *
+ * A chip is `<div style="background:…;padding:…"><span style="font-size:…">`.
+ * Folded into one text node it lost both halves at once: the background became
+ * the glyph colour, because that is what `fill` means on text, and the span's
+ * size, weight and colour were thrown away with the span. Splitting it keeps
+ * the box on the frame and the typography on the text.
+ *
+ * Where a single inline child holds all the words, that child *is* the text
+ * and carries the styling worth having. Otherwise the wrapper's own typography
+ * applies, which is read by converting it again with the box half removed —
+ * so there is one implementation of what a text node is, not two.
+ */
+function textChildOf(
+  el: Element,
+  style: Map<string, string>,
+  unmapped: Set<string>,
+): ParsedNode | null {
+  const only = el.children.length === 1 ? el.children[0] : null;
+  if (only && textOf(only) === textOf(el)) {
+    const node = convert(only, unmapped);
+    if (node && node.type === "text") return node;
+  }
+
+  const bare = el.cloneNode(true) as Element;
+  bare.setAttribute(
+    "style",
+    [...style]
+      .filter(([k]) => !BOX_PROPS.has(k))
+      .map(([k, v]) => `${k}:${v}`)
+      .join(";"),
+  );
+  return convert(bare, unmapped);
+}
+
 function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   const tag = el.tagName.toLowerCase();
   if (tag === "script" || tag === "style") return null;
@@ -560,7 +621,10 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   const mappedProps = new Set(unmapped);
 
   const textOnly = isTextOnly(el);
-  const type = typeFor(el, textOnly);
+  // Text inside something that paints or pads is a box with words in it, and
+  // stays two nodes. Only a bare run of text becomes one.
+  const boxed = textOnly && paintsBox(style);
+  const type = typeFor(el, textOnly && !boxed);
   const props: Partial<SceneNode> = {};
 
   // --- layout ------------------------------------------------------------
@@ -893,9 +957,13 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   const children: ParsedNode[] =
     type === "svg" || type === "text"
       ? []
-      : Array.from(el.children)
-          .map((c) => convert(c, unmapped))
-          .filter((c): c is ParsedNode => c !== null);
+      : boxed
+        ? [textChildOf(el, style, unmapped)].filter(
+            (c): c is ParsedNode => c !== null,
+          )
+        : Array.from(el.children)
+            .map((c) => convert(c, unmapped))
+            .filter((c): c is ParsedNode => c !== null);
 
   return { type, name, props, children };
 }
