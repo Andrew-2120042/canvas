@@ -19,23 +19,31 @@ The canvas is real DOM and real CSS. write_html is how you build: you write mark
 
 Images: put an absolute file path in <img src>. The app reads the file. Never base64 one into a data URL and never downscale one to make it fit — that destroys the image and costs thousands of tokens for something a path does in forty characters.
 
-How to work here:
+Before the first write_html:
 
-1. Read first — get_tree_summary for the page, get_selection for what the user is looking at.
-2. Build ONE visual group per write_html call — a header, a card, one row, a footer. Not a whole screen, and not a whole component: a card with a header, four rows and a footer is six calls. The user is watching the canvas as you work; a design that lands all at once after a minute of silence is a black box they can neither follow nor interrupt. If a single call is getting long, that is the signal to split it.
-3. Look at what you made. get_screenshot after each group and check it actually rendered as intended: nothing clipped, nothing overlapping, columns lining up between rows. Fix it before moving on.
-4. Read ignoredCss in every write_html result. Anything listed there did not take effect.
-5. get_layout before get_screenshot. "Did the frame hug its content, is anything clipped, do the columns line up" are questions about numbers, and get_layout answers them as text for a fraction of what an image costs. Screenshot when the question is genuinely how something looks.
-6. find_nodes to locate something by name, text or type — it costs the matches, not the page. Reach for it before get_canvas_state.
-7. move_nodes to restructure and set_text_content to retext — both keep node ids, so rewriting HTML for either is wasted work.
-8. focus_node to show the user what you are talking about.
-9. get_jsx when the design needs to become code — it emits the same styles the canvas renders with.
+1. get_status — the open file, its artboards and their sizes, the fonts already in use, the selection. Artboard width is what tells you whether you are designing a phone or a desktop. Then get_tree_summary for what is on the page.
+2. get_font_info on any family you intend to set. A family that is not installed does not error, it silently falls back, and the type you designed is not the type that renders.
+3. Decide a palette and a type scale before you build, and say what you chose. Which colours and which sizes are entirely yours — this server has no house style. Choosing once and holding to it is what separates a designed screen from an assembled one.
+4. create_artboard for a new screen. It is placed clear of existing work and lays its children out in flow. Prefer it over create_node.
+
+While building:
+
+5. Build ONE visual group per write_html call — a header, a card, one row, a footer. Not a whole screen, and not a whole component: a card with a header, four rows and a footer is six calls. The user is watching the canvas as you work; a design that lands all at once after a minute of silence is a black box they can neither follow nor interrupt. If a single call is getting long, that is the signal to split it.
+6. Read ignoredCss in every write_html result. Anything listed there did not take effect.
+7. get_layout before get_screenshot. "Did the frame hug its content, is anything clipped, do the columns line up" are questions about numbers, and get_layout answers them as text for a fraction of what an image costs. Screenshot when the question is genuinely how something looks.
+8. Check each group before starting the next, against all five: spacing even and rhythmic; hierarchy clear between heading, body and caption; contrast readable at a glance; columns aligned across repeated rows; nothing clipped at a frame edge. Fix what is wrong now, not at the end.
+
+Editing what is already there — all of these keep node ids, so rewriting a section's HTML to change one thing is wasted work and throws away the user's undo history:
+
+9. find_nodes to locate by name, text or type; set_text_content to retext; update_nodes to restyle; move_nodes to restructure; <x-clone node-id="…"/> to repeat a node you already built. focus_node to show the user what you mean. get_jsx when the design needs to become code.
+
+When you stop, call finish_working — including when you stop early or hand back, so the user can tell a finished design from one that stopped halfway.
 
 Two mechanical rules that cause most misalignment here:
 - In a row of repeated items, give icons and trailing controls a fixed width with flex-shrink:0, and let the text column take the rest with flex:1 and min-width:0. Gap alone does not align columns across rows.
 - A frame with a fixed height clips. If content outgrows it, set sizeH to "auto" so it hugs, rather than guessing a taller number.
 
-The design is yours to make — this server has no house style. Call get_guide for what the renderer supports and where it differs from a browser.`;
+The design is yours to make — this server has no house style. Call get_guide: "building" for how to sequence a build, "craft" for what reads as wrong in any style, and the rest for what the renderer supports.`;
 
 const TOPICS = {
   "design-basics": `# How this canvas renders
@@ -70,6 +78,38 @@ and anything else you would normally reach for.
 
 ignoredCss lists only what genuinely could not be applied, and is normally
 empty. Read it when it is not.`,
+
+  craft: `# What reads as wrong in any style
+
+This server has no house style and takes no position on how a design should
+look. Minimalism is a style. So is density; so is a strict uniform grid — a
+dashboard full of equal cards at equal weight is a deliberate, correct answer
+for a dashboard. None of that is prescribed here.
+
+What follows is not taste. It is how human vision works, so it holds whatever
+the design is trying to be.
+
+## Hierarchy needs real distance
+Heading, body and caption at 24, 18 and 16 are not three levels — they are
+three similar greys, and the eye cannot rank them at a glance. Levels have to
+differ enough to be told apart without comparing them side by side, in size or
+weight or both. How far apart is yours to choose; that they are separable is
+not.
+
+## Proximity is grouping
+Space is what says which things belong together, and it says it before any
+label does. Equal spacing everywhere states that everything is equally
+related, which is almost never what a design means. Tighten within a group —
+a label and its value, a heading and its subhead — and open up between groups.
+If two things are related and spaced like strangers, the reader believes the
+spacing.
+
+## Contrast is legibility, not preference
+Muted text is a real tool and easy to overspend. Every colour pairing has to
+be readable at a glance, without squinting, and small text needs more contrast
+than looks necessary at the size you are designing it. This is the one place
+where a choice can simply be wrong rather than different: text nobody can read
+has failed at the only thing text does.`,
 
   building: `# How to build here
 

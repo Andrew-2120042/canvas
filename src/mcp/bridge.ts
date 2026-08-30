@@ -57,13 +57,20 @@ const handlers: Record<string, Handler> = {
     // does not error — the engine quietly substitutes another — so reporting
     // the requested name told a caller to match a font that was never on
     // screen. Each one is checked against what the engine actually resolves.
-    const requested = [...new Set(
-      nodes.map((n) => n.fontFamily).filter((x): x is string => !!x),
+    // Deduplicated by the family that actually gets used, not by the stack
+    // it was written in. Two nodes asking for `Helvetica Neue, sans-serif`
+    // and `Helvetica Neue, Arial` are asking for one font, and listing it
+    // twice makes the reader think there are two.
+    const families = [...new Set(
+      nodes
+        .map((n) => n.fontFamily)
+        .filter((x): x is string => !!x)
+        .map((stack) => stack.split(",")[0].trim().replace(/^["']|["']$/g, "")),
     )].sort();
-    const fonts = requested.map((family) => {
-      const first = family.split(",")[0].trim().replace(/^["']|["']$/g, "");
-      return { family: first, rendering: fontRenders(first) };
-    });
+    const fonts = families.map((family) => ({
+      family,
+      rendering: fontRenders(family),
+    }));
 
     // Top-level frames are the boards being designed on.
     const artboards = (page?.children ?? [])

@@ -35,9 +35,9 @@ function buildServer() {
         "Omit topic for all of it.",
       inputSchema: {
         topic: z
-          .enum(["building", "design-basics", "layout", "css", "icons"])
+          .enum(["building", "craft", "design-basics", "layout", "css", "icons"])
           .optional()
-          .describe("`building` is how to sequence calls and verify each group — read it first."),
+          .describe("`building` is how to sequence calls and verify each group — read it first. `craft` is what reads as wrong in any style."),
       },
     },
     async (args) => ({ content: [{ type: "text", text: guide(args?.topic) }] }),
@@ -184,8 +184,9 @@ function buildServer() {
     {
       title: "Finish working",
       description:
-        "Call when you are done. Clears the working indicator, so the user " +
-        "can tell a finished design from one that stopped halfway.",
+        "Call this when you stop — always, including when you stop early, " +
+        "hand back, or are blocked. Clears the working indicator, so the " +
+        "user can tell a finished design from one that stopped halfway.",
       inputSchema: {},
     },
     async (args) => text(await bridge.call("finish_working", args)),
@@ -305,8 +306,13 @@ function buildServer() {
     {
       title: "Create node",
       description:
-        "Add a node to the current page. Coordinates are relative to " +
-        "parentId when given, otherwise to the page.",
+        "Add ONE node at a coordinate you have already worked out — a badge, " +
+        "a divider, a spacer. This is not how you build: anything with " +
+        "structure should go through write_html, which lays out with real " +
+        "flexbox so you describe the arrangement instead of computing every " +
+        "position. Reaching for this per element is how a design ends up " +
+        "placed node by node, which is slower to write and rigid afterwards. " +
+        "Coordinates are relative to parentId when given, otherwise to the page.",
       inputSchema: {
         type: z.enum(["frame", "rect", "text", "image", "path"]),
         x: z.number().optional(),
