@@ -133,8 +133,12 @@ export function layoutCss(
     if (node.alignSelf) css.alignSelf = alignValue(node.alignSelf);
   } else {
     css.position = "absolute";
-    css.left = node.x;
-    css.top = node.y;
+    // A node pinned to the right or bottom edge says so in its own CSS, and
+    // an offset from the opposite edge would win over it. The model stores a
+    // left/top for everything, so it has to stand aside where the markup was
+    // explicit about the other side.
+    if (node.css?.right === undefined) css.left = node.x;
+    if (node.css?.bottom === undefined) css.top = node.y;
   }
 
   // "auto" lets content decide; "fill" takes the whole of the parent on that

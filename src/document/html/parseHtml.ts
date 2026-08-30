@@ -55,7 +55,7 @@ const KNOWN = new Set([
   "background-size", "background-position", "background-repeat",
   "opacity", "border-radius", "transform", "overflow",
   "font-size", "font-weight", "line-height", "letter-spacing", "text-align",
-  "font-family", "white-space", "flex", "box-sizing", "inset", "right", "bottom",
+  "font-family", "white-space", "flex", "box-sizing", "inset",
   "border", "border-color", "border-width", "box-shadow",
   "border-top", "border-right", "border-bottom", "border-left",
   "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",

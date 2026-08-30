@@ -416,15 +416,15 @@ function buildServer() {
         "transform:rotate, opacity, overflow:hidden, and the text properties " +
         "font-size/weight/line-height/letter-spacing/text-align/color. " +
         "For width and height use a pixel length, 100% to fill the parent, " +
-        "or leave it out to size to the content — other percentages have no " +
-        "equivalent. Inline <svg> is kept as-is, which is how icons and " +
-        "illustrations are drawn. Add layer-name=\"...\" to any element to " +
-        "name the layer. There is no CSS Grid and no stylesheet support: use " +
-        "flex, and put styles in the style attribute. Anything not " +
-        "Write ordinary CSS — anything this canvas has no special handling " +
-        "for is passed to the browser unchanged, so it behaves as it would " +
-        "on a web page. ignoredCss lists only what genuinely could not be " +
-        "applied; it is normally empty.",
+        "or leave it out to size to the content. Inline <svg> is kept as-is, " +
+        "which is how icons and illustrations are drawn. Add layer-name=\"…\" " +
+        "to any element to name the layer. " +
+        "Write ordinary CSS: anything without special handling here is passed " +
+        "to the browser unchanged and behaves as it would on a web page, " +
+        "including grid, margin and percentage padding. A <style> block is " +
+        "honoured too — the cascade is resolved by the browser — so real page " +
+        "markup can be pasted in as it stands. ignoredCss lists only what " +
+        "genuinely could not be applied; it is normally empty.",
       inputSchema: {
         html: z.string().describe("A complete HTML fragment with inline styles."),
         targetNodeId: z.string().optional()

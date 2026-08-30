@@ -150,10 +150,12 @@ async function drawPhotos(
   photos: Photo[],
   originX: number,
   originY: number,
-): Promise<void> {
+): Promise<number> {
+  let drawn = 0;
   for (const photo of photos) {
     const img = await loadPhoto(photo.src);
     if (!img || !img.naturalWidth || !img.naturalHeight) continue;
+    drawn += 1;
 
     ctx.save();
     if (photo.clip && photo.clip.width > 0 && photo.clip.height > 0) {
@@ -178,6 +180,7 @@ async function drawPhotos(
     );
     ctx.restore();
   }
+  return drawn;
 }
 
 /**
@@ -192,12 +195,27 @@ async function drawPhotos(
  * Targeting the nodes by id from the injected stylesheet leaves the markup
  * exactly as the browser produced it.
  */
-function hidePhotosRule(photos: Photo[]): string {
+function hidePhotosRule(doc: Doc, photos: Photo[]): string {
   if (photos.length === 0) return "";
-  const selector = photos
-    .map((p) => `[data-node-id="${CSS.escape(p.id)}"]`)
+
+  // Not only the photo's own node. A photograph is drawn in the pass beneath
+  // this one, so anything painting a fill between it and the viewer covers it
+  // — and that includes every frame it sits inside, up to and including the
+  // artboard's own white. Clearing the whole chain leaves the vector layer
+  // transparent down to the picture, so the picture shows and everything
+  // stacked on it still paints on top.
+  const ids = new Set<NodeId>();
+  for (const photo of photos) {
+    let cur: NodeId | null = photo.id;
+    while (cur) {
+      ids.add(cur);
+      cur = doc.nodes[cur]?.parent ?? null;
+    }
+  }
+  const selector = [...ids]
+    .map((id) => `[data-node-id="${CSS.escape(id)}"]`)
     .join(",");
-  return `${selector}{background-image:none !important}`;
+  return `${selector}{background:none !important}`;
 }
 
 /**
@@ -224,7 +242,11 @@ function settle(root: HTMLElement): void {
 async function renderVectors(
   html: string, width: number, height: number, background: string, scale: number,
   extraCss = "",
-): Promise<{ canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }> {
+): Promise<{
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  layer: HTMLImageElement;
+}> {
   const css = collectCss() + extraCss;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
@@ -250,9 +272,23 @@ async function renderVectors(
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  ctx.drawImage(img, 0, 0);
 
-  return { canvas, ctx };
+  // Deliberately not painted yet.
+  //
+  // A photograph cannot travel inside this SVG: measured, an image stops
+  // loading somewhere between 300px and 500px on its longest side — around a
+  // hundred kilobytes of data URL — and it fails silently, leaving a hole
+  // where the picture should be. At 300px it is far too soft to review. So
+  // the photographs are drawn straight onto the canvas in a separate pass,
+  // and the only thing that matters is which pass goes first.
+  //
+  // On this canvas a photograph is always a node's background, so everything
+  // in the vector layer — the node's own children, later siblings, a headline
+  // sitting on the picture — belongs above it. Painting the vectors first and
+  // the photographs after put every one of those underneath, which is what
+  // made an agent conclude images always cover their siblings and flatten a
+  // whole design to work around it.
+  return { canvas, ctx, layer: img };
 }
 
 export function registerScreenshotTool(): void {
@@ -340,12 +376,20 @@ export function registerScreenshotTool(): void {
     // for detail nobody had asked to see.
     const cap = asked > 1 ? DETAIL_MAX_SIDE : REVIEW_MAX_SIDE;
     const scale = Math.min(asked, cap / Math.max(box.width, box.height));
-    const { canvas, ctx } = await renderVectors(
-      html, box.width, box.height, page.background, Math.max(scale, 0.1),
-      hidePhotosRule(photos),
+    // The ground is the captured node's own fill where it has one, because
+    // that fill is no longer painted in the vector layer.
+    const ground = nodeId
+      ? f.doc.nodes[nodeId]?.fill ?? page.background
+      : page.background;
+    const { canvas, ctx, layer } = await renderVectors(
+      html, box.width, box.height,
+      ground && ground !== "transparent" ? ground : page.background,
+      Math.max(scale, 0.1),
+      hidePhotosRule(f.doc, photos),
     );
-    // Photographs go on last, at full resolution, over the vector layer.
+    // Backgrounds first, then everything that sits on them.
     await drawPhotos(ctx, photos, originX, originY);
+    ctx.drawImage(layer, 0, 0);
     const data = canvas.toDataURL("image/png").split(",")[1];
     // The rendered size, not the logical one. Reporting the box while the
     // raster was a different size hid what a capture actually cost, from the

@@ -13,6 +13,29 @@ import { activeFile, useDoc } from "../document/store";
 
 type Handler = (args: Record<string, unknown>) => unknown | Promise<unknown>;
 
+/**
+ * Whether a family renders as itself rather than being substituted.
+ *
+ * Measured, because a missing font is not an error — two strings set in the
+ * candidate against a known fallback measure identically when nothing of the
+ * candidate was used.
+ */
+function fontRenders(family: string): boolean {
+  if (/^(system-ui|sans-serif|serif|monospace|cursive|fantasy|ui-[\w-]+)$/i.test(family)) {
+    return true;
+  }
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) return true;
+  const probe = "MWQ_iljI mmmmwwww";
+  const width = (stack: string): number => {
+    ctx.font = `72px ${stack}`;
+    return ctx.measureText(probe).width;
+  };
+  const quoted = `"${family.replace(/"/g, "")}"`;
+  return width(`${quoted}, monospace`) !== width("monospace")
+    || width(`${quoted}, serif`) !== width("serif");
+}
+
 const handlers: Record<string, Handler> = {
   /**
    * Everything needed to decide what to do first.
@@ -29,9 +52,18 @@ const handlers: Record<string, Handler> = {
     const page = f.doc.pages[f.currentPageId];
 
     const nodes = Object.values(f.doc.nodes);
-    const fonts = [...new Set(
+
+    // What was asked for is not what renders. A family that is not installed
+    // does not error — the engine quietly substitutes another — so reporting
+    // the requested name told a caller to match a font that was never on
+    // screen. Each one is checked against what the engine actually resolves.
+    const requested = [...new Set(
       nodes.map((n) => n.fontFamily).filter((x): x is string => !!x),
     )].sort();
+    const fonts = requested.map((family) => {
+      const first = family.split(",")[0].trim().replace(/^["']|["']$/g, "");
+      return { family: first, rendering: fontRenders(first) };
+    });
 
     // Top-level frames are the boards being designed on.
     const artboards = (page?.children ?? [])
@@ -58,6 +90,8 @@ const handlers: Record<string, Handler> = {
       artboards,
       // Families already in the document. Prefer these over introducing a new
       // one, unless the brief calls for it.
+      // `rendering: false` means text was set in this family but something
+      // else is on screen. Do not match it — pick a family that resolves.
       fontFamilies: fonts,
       pageBackground: page?.background ?? null,
       nodeCount: nodes.length,

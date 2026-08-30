@@ -12,6 +12,20 @@ import { create } from "zustand";
 const ARRIVAL_MS = 900;
 /** Gap between staggered arrivals, so a burst plays as a build. */
 const STAGGER_MS = 110;
+/**
+ * The longest anything waits to appear.
+ *
+ * The stagger is there so a burst of writes reads as a build rather than a
+ * single flash. Applied per node without a ceiling it does the opposite: a
+ * node's entrance begins at `opacity: 0`, so on a page of two hundred nodes
+ * the last one is invisible for twenty-two seconds — and since the queue
+ * carries across calls, whole sections sit hidden while the agent has moved
+ * on. What looked like a slow renderer was finished work being held back.
+ *
+ * A group still arrives in sequence; the whole group is just guaranteed to be
+ * on screen inside this.
+ */
+const MAX_STAGGER_MS = 600;
 /** How long a finished build keeps its chip before fading out. */
 const DONE_MS = 1600;
 
@@ -57,8 +71,14 @@ export const useActivity = create<ActivityStore>((set, get) => ({
     // steady rate rather than landing on screen all at once.
     const queued = Object.values(state.arrivals).filter((t) => t > now).length;
     const arrivals = { ...state.arrivals };
+
+    // Spread this batch across the window rather than giving each node a
+    // fixed gap, so a six-node group and a sixty-node one both finish
+    // arriving at the same moment.
+    const pending = queued + ids.length;
+    const step = Math.min(STAGGER_MS, MAX_STAGGER_MS / Math.max(1, pending));
     ids.forEach((id, i) => {
-      arrivals[id] = now + (queued + i) * STAGGER_MS;
+      arrivals[id] = now + Math.min(MAX_STAGGER_MS, (queued + i) * step);
     });
     set({
       building: true,
