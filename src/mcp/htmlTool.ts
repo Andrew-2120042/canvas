@@ -107,12 +107,30 @@ export function registerHtmlTool(): void {
       }
     }
 
-    // The width the markup will live in, so a stylesheet's percentages and
-    // flex resolve against the box they will actually occupy.
-    const container = targetId
-      ? activeFile().doc.nodes[targetId]?.width ?? 1440
-      : 1440;
-    const { nodes: parsed, ignored } = parseHtml(html, container);
+    // The viewport this markup is being designed for — the artboard, not the
+    // frame it happens to be dropped into.
+    //
+    // Media queries resolve against this. Using the immediate target's width
+    // meant writing a header into any frame narrower than a breakpoint
+    // silently triggered that page's mobile rules: on a real site whose CSS
+    // says `@media (max-width:980px){ .nav{display:none} }`, the entire
+    // navigation was set to display:none before it ever became a node. The
+    // markup was right, the stylesheet was right, and the nav was gone.
+    const pageWidth = (id: NodeId | null): number => {
+      const doc = activeFile().doc;
+      let cur = id;
+      let width = 1440;
+      while (cur) {
+        const node: SceneNode | undefined = doc.nodes[cur];
+        if (!node) break;
+        width = node.width;
+        if (!node.parent) break;
+        cur = node.parent;
+      }
+      return width || 1440;
+    };
+    const container = pageWidth(targetId);
+    const { nodes: parsed, ignored, conversion } = parseHtml(html, container);
     if (parsed.length === 0) throw new Error("no elements found in the html");
 
     const flat: Array<{ node: SceneNode; children: NodeId[] }> = [];
@@ -133,7 +151,9 @@ export function registerHtmlTool(): void {
       }
     }
 
-    noteAgentWrite("create", flat.map((f) => f.node.id));
+    // Every node is "touched"; only the roots enter. A write_html call is one
+    // visual group, and it should appear as one.
+    noteAgentWrite("create", flat.map((f) => f.node.id), roots);
     useDoc.getState().insertTree(flat, roots, targetId, mode);
 
     return {
@@ -142,6 +162,10 @@ export function registerHtmlTool(): void {
       // Say what could not be represented rather than letting the caller
       // assume the markup arrived intact.
       ignoredCss: ignored,
+      // What the conversion did. Reported every time rather than only on
+      // failure: an agent that cannot see the stylesheet was resolved at one
+      // width has no reason to suspect the other three breakpoints exist.
+      conversion,
       nodes: flat.map((f) => ({ id: f.node.id, name: f.node.name, type: f.node.type })),
     };
   });

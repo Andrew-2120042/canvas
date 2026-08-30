@@ -153,14 +153,16 @@ export function layoutCss(
   const w = node.sizeW ?? "fixed";
   const h = node.sizeH ?? "fixed";
 
-  if (w === "auto") css.width = "auto";
+  // The node's own CSS wins where it is more specific than the field: a
+  // `fit-content` cannot survive being restated as `auto`.
+  if (w === "auto") { if (node.css?.width === undefined) css.width = "auto"; }
   else if (w === "fill") {
     if (!flowing) css.width = "100%";
     else if (column) { css.alignSelf = "stretch"; css.width = "auto"; }
     else { css.flexGrow = css.flexGrow ?? 1; css.flexBasis = 0; css.width = "auto"; }
   } else css.width = node.width;
 
-  if (h === "auto") css.height = "auto";
+  if (h === "auto") { if (node.css?.height === undefined) css.height = "auto"; }
   else if (h === "fill") {
     if (!flowing) css.height = "100%";
     else if (column) { css.flexGrow = css.flexGrow ?? 1; css.flexBasis = 0; css.height = "auto"; }

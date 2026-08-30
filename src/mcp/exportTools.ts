@@ -220,6 +220,13 @@ function emit(
   }
 
   if (node.type === "text") {
+    // A formatted run exports as its markup, or the export would flatten the
+    // very thing the node went to trouble to keep.
+    if (node.richText) {
+      const runs = opts.jsx ? svgToJsx(node.richText) : node.richText;
+      lines.push(`${pad}${open}>${runs}</p>`);
+      return;
+    }
     const text = escapeText(node.text ?? "", opts.jsx);
     // Newlines in a text node are real line breaks, not whitespace to
     // collapse. The node renders them because it carries a white-space rule;

@@ -66,6 +66,9 @@ function describe(doc: Doc, id: NodeId, includeStyle: boolean) {
   if (n.clipContent) base.clipContent = true;
   if (n.type === "text") {
     base.text = n.text;
+    // Reported so a caller can tell a flat run from a formatted one; the
+    // markup itself is usually long and is fetched with get_jsx.
+    if (n.richText) base.hasFormatting = true;
     base.fontSize = n.fontSize;
     base.fontWeight = n.fontWeight;
     base.lineHeight = n.lineHeight;

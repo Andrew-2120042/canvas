@@ -7,6 +7,7 @@ import { useCanvasInteraction } from "../canvas/useCanvasInteraction";
 import { useKeyboard } from "../canvas/useKeyboard";
 import { SceneNodeView } from "../canvas/SceneNodeView";
 import { SelectionOverlay } from "../canvas/SelectionOverlay";
+import { ArrivalOutlines } from "../canvas/ArrivalOutlines";
 import { CommentLayer, type PendingComment } from "../canvas/CommentLayer";
 import { usePenTool } from "../canvas/usePenTool";
 import { PenPreview } from "../canvas/PenPreview";
@@ -230,6 +231,7 @@ export function CanvasRegion() {
 
       <PenPreview draft={penDraft} />
       <PathEditOverlay />
+      <ArrivalOutlines />
       <SelectionOverlay />
       <CommentLayer pending={pending} onCancel={() => setPending(null)} />
       <BuildStatus />

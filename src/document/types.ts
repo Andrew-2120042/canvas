@@ -232,6 +232,21 @@ export interface SceneNode {
 
   /** Text nodes only. */
   text?: string;
+  /**
+   * The same words, with their formatting, when the run is not uniform.
+   *
+   * A heading like `<i>JOIN</i> THE THRILL` is one text layer in any design
+   * tool — not three — but it is not one *style*. The model held a single
+   * style per text node, so collapsing the run to plain text threw the italic
+   * and its weight away and the heading came out flat. Splitting it into
+   * separate nodes would have kept the look and wrecked the layer tree.
+   *
+   * So the runs are kept as the inline markup they already are. The canvas is
+   * real DOM; this renders verbatim, the same way an icon's SVG does. `text`
+   * stays the plain-text form — what the layer is named from, what tools read
+   * and write, and what editing falls back to.
+   */
+  richText?: string;
   /** The node's CSS transform, verbatim. Kept as a string rather than picked
    *  apart into fields: the canvas is real CSS, so anything the browser can
    *  express here should survive. `rotate` stays alongside it because the

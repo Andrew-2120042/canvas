@@ -42,6 +42,55 @@ const CARRIED = [
   "white-space", "object-fit", "backdrop-filter", "filter", "mix-blend-mode",
 ] as const;
 
+/**
+ * Pseudo-elements, made real.
+ *
+ * `::before` and `::after` are not in childNodes and not in the markup. They
+ * exist only in the computed style, so a tree walker cannot see them at all —
+ * they are not dropped by any rule, they were never visible to be dropped.
+ * On a real page that is a large share of the design: scrims, bullets,
+ * dividers, badges, the underline under a link.
+ *
+ * The one that hurts is a scrim. `.hero__frame::after` is the gradient that
+ * makes white headline text readable over a bright photograph. Lose it and
+ * the text is still there, still white, and completely invisible — which
+ * reads as "the text is missing" rather than "a box is missing".
+ *
+ * They can only be recovered here, while the element is mounted and the
+ * browser can be asked. Each one becomes an ordinary child element carrying
+ * the same styles, so everything downstream treats it as the box it always
+ * was. Done at this stage so nothing later needs to know pseudo-elements
+ * exist.
+ */
+function materialisePseudo(el: HTMLElement, root: HTMLElement): void {
+  for (const which of ["::before", "::after"] as const) {
+    const style = getComputedStyle(el, which);
+    const content = style.getPropertyValue("content");
+    // "none" is the default and means there is no pseudo-element. An empty
+    // string is not nothing: `content: ""` is exactly how a decorative box is
+    // written, and it is the common case for a scrim.
+    if (!content || content === "none" || content === "normal") continue;
+
+    const node = document.createElement("div");
+    let decl = "";
+    for (const prop of CARRIED) {
+      const value = style.getPropertyValue(prop);
+      if (value) decl += `${prop}:${value};`;
+    }
+    node.setAttribute("style", decl);
+    node.setAttribute("data-pseudo", which === "::before" ? "before" : "after");
+
+    // Text content, when the pseudo carries any. Anything else — counters,
+    // attr(), an image — has no text to lift, and its box still comes across.
+    const literal = /^"(.*)"$/s.exec(content);
+    if (literal && literal[1]) node.textContent = literal[1];
+
+    if (which === "::before") el.insertBefore(node, el.firstChild);
+    else el.appendChild(node);
+  }
+  void root;
+}
+
 /** One hidden host, reused, so a build does not churn the document. */
 let host: HTMLElement | null = null;
 
@@ -76,8 +125,11 @@ function referenceStyle(tag: string, root: HTMLElement): Record<string, string> 
 /**
  * Whether a fragment carries its own stylesheet.
  *
- * Markup written with inline styles is left alone — it needs no resolving,
- * and mounting it would cost a layout pass for nothing.
+ * Kept for callers that want to know, but no longer used to decide whether to
+ * resolve. Skipping the mount for inline-only markup meant two different
+ * implementations of "what does this markup mean" — the browser's for one
+ * kind of input and a pile of heuristics for the other — and they disagreed.
+ * Every fragment now goes through the browser.
  */
 export function hasStylesheet(html: string): boolean {
   return /<style[\s>]/i.test(html);
@@ -97,6 +149,14 @@ export function inlineStylesheet(html: string, width: number): string {
 
   // Force layout once, so every computed value below is resolved.
   void root.offsetWidth;
+
+  // Pseudo-elements first, so the ones that carry boxes are in the tree
+  // before styles are read back onto it.
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "style" || tag === "script" || el.hasAttribute("data-pseudo")) continue;
+    materialisePseudo(el, root);
+  }
 
   const elements = Array.from(root.querySelectorAll<HTMLElement>("*"));
   for (const el of elements) {

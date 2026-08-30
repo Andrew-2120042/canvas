@@ -138,6 +138,13 @@ function SceneNodeViewInner({
           >
             {node.text}
           </div>
+        ) : node.richText ? (
+          // Formatted runs render as the markup they are — the same way an
+          // icon's SVG does, and for the same reason: the canvas is real DOM,
+          // so the faithful thing to do with a styled run of words is to let
+          // the browser lay it out. Plain `text` still backs editing, naming
+          // and every tool that reads this node.
+          <span dangerouslySetInnerHTML={{ __html: node.richText }} />
         ) : (
           node.text
         ))}

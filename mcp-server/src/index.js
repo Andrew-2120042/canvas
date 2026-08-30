@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { AppBridge } from "./appBridge.js";
 import { INSTRUCTIONS, guide, guideTopics } from "./guide.js";
+import { readFile } from "node:fs/promises";
 
 const PORT = Number(process.env.CANVAS_MCP_PORT ?? process.argv[2] ?? 4319);
 /** Loopback only. This server is one user's own agent talking to their own
@@ -147,17 +148,23 @@ function buildServer() {
     {
       title: "Create artboard",
       description:
-        "A page to design on. Placed clear of existing boards, sized to a " +
-        "real device, and set to lay its children out in flow so sections " +
-        "stack the way a page does. Prefer this over create_node for a new " +
-        "screen. The height is a starting point: when content outgrows it, " +
-        "set sizeH to \"auto\" rather than guessing a taller number.",
+        "A page to design on. Placed clear of existing boards and set to lay " +
+        "its children out in flow, so sections stack the way a page does. " +
+        "Prefer this over create_node for a new screen. " +
+        "IMPORTANT: pass the height of the WHOLE page, not one screenful. A " +
+        "landing page with six sections is four to six thousand pixels tall, " +
+        "not 900. The board is drawn at that size immediately — an empty " +
+        "page — so every section you write lands into space already there, " +
+        "instead of the page growing a strip at a time underneath your work. " +
+        "The height is a floor, not a ceiling: the board still grows if you " +
+        "underestimate, so err tall.",
       inputSchema: {
         name: z.string().optional(),
         device: z.enum(["desktop", "tablet", "mobile"]).optional()
-          .describe("desktop 1440x900, tablet 768x1024, mobile 390x844. Default desktop."),
+          .describe("Width preset: desktop 1440, tablet 768, mobile 390. Its height is one screenful — override it with `height` for a scrolling page."),
         width: z.number().optional(),
-        height: z.number().optional(),
+        height: z.number().optional()
+          .describe("Full page height, not one screenful. Acts as a minimum; the board grows past it if content is taller."),
         background: z.string().optional(),
       },
     },
@@ -244,6 +251,49 @@ function buildServer() {
       },
     },
     async (args) => text(await bridge.call("get_jsx", args)),
+  );
+
+  server.registerTool(
+    "compare_to_source",
+    {
+      title: "Compare to source",
+      description:
+        "Measure a reproduction against the page it came from. Renders the " +
+        "source file and the artboard through the SAME rasteriser and " +
+        "subtracts them, so what comes back is a genuine difference rather " +
+        "than font smoothing. This is the only check either this server or " +
+        "your own judgement cannot substitute for: it finds what you did not " +
+        "think to look for. A section removed by a media query, a scrim that " +
+        "never converted, a heading that lost its italic — none of those " +
+        "announce themselves in a screenshot, because nothing draws the eye " +
+        "to something that is absent. " +
+        "Returns numbers, not a picture: `ok`, the percentage of pixels that " +
+        "differ, a height delta (negative means you are missing something " +
+        "structural), and the worst regions in the SOURCE page's " +
+        "coordinates, worst first. Photographs are excluded from both sides " +
+        "— same files, and they would swamp the measurement. " +
+        "Run it after building a page you were given a source for.",
+      inputSchema: {
+        nodeId: z.string()
+          .describe("The artboard holding the reproduction."),
+        sourcePath: z.string()
+          .describe("Absolute path to the source .html file. Read by the server."),
+      },
+    },
+    async (args) => {
+      const path = String(args?.sourcePath ?? "");
+      if (!path) throw new Error("sourcePath is required");
+      let sourceHtml;
+      try {
+        sourceHtml = await readFile(path, "utf8");
+      } catch (err) {
+        throw new Error(`could not read "${path}": ${err.message}`);
+      }
+      return text(await bridge.call("compare_to_source", {
+        nodeId: args.nodeId,
+        sourceHtml,
+      }));
+    },
   );
 
   server.registerTool(

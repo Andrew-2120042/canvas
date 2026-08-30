@@ -228,7 +228,7 @@ function hidePhotosRule(doc: Doc, photos: Photo[]): string {
  * write came back blank. The capture wants the settled state, which is what
  * the animation was on its way to.
  */
-function settle(root: HTMLElement): void {
+export function settle(root: HTMLElement): void {
   for (const el of [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))]) {
     el.classList?.remove("is-arriving", "is-building");
     if (el.style) {
@@ -239,15 +239,24 @@ function settle(root: HTMLElement): void {
   }
 }
 
-async function renderVectors(
+export async function renderVectors(
   html: string, width: number, height: number, background: string, scale: number,
   extraCss = "",
+  /**
+   * Whether to include the canvas's own stylesheet.
+   *
+   * A capture of the canvas needs it — that is where a node gets its
+   * box-sizing and its text rendering. A capture of somebody else's page must
+   * not have it, or the comparison is measuring our stylesheet's effect on
+   * their markup rather than the difference between the two designs.
+   */
+  includeAppCss = true,
 ): Promise<{
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   layer: HTMLImageElement;
 }> {
-  const css = collectCss() + extraCss;
+  const css = (includeAppCss ? collectCss() : "") + extraCss;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
     `viewBox="0 0 ${width} ${height}">` +

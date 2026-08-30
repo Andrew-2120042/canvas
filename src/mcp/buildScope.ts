@@ -32,13 +32,18 @@ function closeNow(): void {
 }
 
 /** Called by every agent write; opens the build if one is not already open. */
-export function noteAgentWrite(op = "work", ids: string[] = []): void {
+export function noteAgentWrite(
+  op = "work",
+  ids: string[] = [],
+  /** The group roots, when the write has a shape — see activity.noteWrite. */
+  roots?: string[],
+): void {
   if (!open) {
     open = true;
     useDoc.getState().beginBuild();
     useActivity.getState().beginBuild();
   }
-  useActivity.getState().noteWrite(op, ids);
+  useActivity.getState().noteWrite(op, ids, roots);
   // A build with no explicit end — an agent that crashes mid-turn, say —
   // must not swallow the user's next edit into itself.
   if (idleTimer) clearTimeout(idleTimer);

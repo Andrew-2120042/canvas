@@ -24,7 +24,7 @@ Before the first write_html:
 1. get_status — the open file, its artboards and their sizes, the fonts already in use, the selection. Artboard width is what tells you whether you are designing a phone or a desktop. Then get_tree_summary for what is on the page.
 2. get_font_info on any family you intend to set. A family that is not installed does not error, it silently falls back, and the type you designed is not the type that renders.
 3. Decide a palette and a type scale before you build, and say what you chose. Which colours and which sizes are entirely yours — this server has no house style. Choosing once and holding to it is what separates a designed screen from an assembled one.
-4. create_artboard for a new screen. It is placed clear of existing work and lays its children out in flow. Prefer it over create_node.
+4. create_artboard for a new screen, sized for the WHOLE page — a six-section landing page is four to six thousand pixels tall, not 900. The empty board is drawn at that size straight away, so each section you write lands into space already allocated rather than the page growing under your work. The height is a floor, not a ceiling; it grows if you underestimate, so err tall. Prefer it over create_node.
 
 While building:
 
@@ -36,6 +36,8 @@ While building:
 Editing what is already there — all of these keep node ids, so rewriting a section's HTML to change one thing is wasted work and throws away the user's undo history:
 
 9. find_nodes to locate by name, text or type; set_text_content to retext; update_nodes to restyle; move_nodes to restructure; <x-clone node-id="…"/> to repeat a node you already built. focus_node to show the user what you mean. get_jsx when the design needs to become code.
+
+When you were given a source page to reproduce, call compare_to_source before you finish. It renders the source and your artboard through the same rasteriser and subtracts them, which is the only step that catches what you did not think to check — a nav removed by a media query, a scrim that never converted, a heading that lost its italic. Nothing draws your eye to something that is simply absent.
 
 When you stop, call finish_working — including when you stop early or hand back, so the user can tell a finished design from one that stopped halfway.
 
@@ -135,6 +137,19 @@ fix a part of a call you have already made.
 
 If a call is getting long, that is the signal to split it, not to push on.
 
+## Reproducing a page you were given
+Read the source. Do not retype the copy from a screenshot — the words are in
+the file, and invented copy is the most visible way a reproduction goes wrong.
+When the page is built, run compare_to_source: it measures your artboard
+against the file and reports what differs, where, in the source's own
+coordinates.
+
+Read the "conversion" block on every write_html result. It says which width
+the stylesheet's media queries resolved at, how many pseudo-elements were
+recovered, and how many text runs kept their formatting. A page whose CSS has
+four breakpoints was converted at one of them, and that is worth knowing
+before you decide the layout is wrong.
+
 ## Look at what you built
 After each group, check it before moving on:
 - get_layout answers "does it fit, did the frame hug, is anything clipped,
@@ -185,7 +200,9 @@ block. The panel shows a computed pixel number for anything it cannot hold as
 a percentage, but what renders is the percentage.
 
 ## Frames that clip
-Artboard height is a starting point. When content grows past it the frame clips — a half-cut title is the usual symptom. Remove the height so the frame hugs its content, or set the height once you know the real number. Do not guess a bigger one.
+A frame with a fixed height clips its content — a half-cut title is the usual symptom. Set sizeH to "auto" so it hugs, rather than guessing a taller number.
+
+An artboard made by create_artboard is not one of these: its height is a minimum, so it is drawn at full size up front and still grows if the page turns out taller. Give it the whole page's height when you make it.
 `,
 
   css: `# CSS

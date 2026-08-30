@@ -3,7 +3,7 @@ import type {
   SpacingValue,
 } from "../types";
 import type { BorderStyle, ShadowStyle } from "../style";
-import { hasStylesheet, inlineStylesheet } from "./resolveCss";
+import { inlineStylesheet } from "./resolveCss";
 
 /**
  * HTML and CSS into canvas nodes.
@@ -46,6 +46,24 @@ export interface ParseResult {
   nodes: ParsedNode[];
   /** CSS declarations encountered that the model cannot express. */
   ignored: string[];
+  /**
+   * What the conversion did, where it is worth knowing.
+   *
+   * `ignoredCss` reports one property at a time, which cannot describe the
+   * things that actually go missing from a real page: a stylesheet resolved
+   * at one width when it has rules for four, pseudo-elements recovered, hover
+   * states that have no resting equivalent. Those were silent, so nobody knew
+   * to rebuild them — the loss surfaced an hour later in a screenshot, if at
+   * all. Said here, in the same call that caused it, it can be acted on.
+   */
+  conversion: {
+    /** The viewport width the stylesheet's media queries resolved against. */
+    resolvedAtWidth: number;
+    /** Pseudo-elements recovered as real nodes. */
+    pseudoElements: number;
+    /** Text nodes keeping formatted runs rather than flattening them. */
+    formattedRuns: number;
+  };
 }
 
 /**
@@ -593,6 +611,107 @@ function textChildOf(
   return convert(bare, unmapped);
 }
 
+/**
+ * An element's children, including the words between them.
+ *
+ * Walking `el.children` visits elements only. Any bare text sitting beside an
+ * element child was therefore never visited and simply disappeared: markup as
+ * ordinary as `<div class="btn">View Classes <svg/></div>` arrived as an icon
+ * in an empty button, which is exactly what a white pill with nothing in it
+ * is. The all-inline case was fixed once already — this is the same deletion
+ * one step out, where the text shares its parent with a real box.
+ *
+ * Order is preserved by walking childNodes rather than elements, so the words
+ * stay where they were written. A run of text becomes a text node carrying
+ * its parent's typography, minus anything that paints the parent's own box.
+ */
+function childNodesOf(
+  el: Element,
+  style: Map<string, string>,
+  unmapped: Set<string>,
+): ParsedNode[] {
+  const out: ParsedNode[] = [];
+  for (const child of Array.from(el.childNodes)) {
+    if (child.nodeType === 3) {
+      const text = (child.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (!text) continue;
+      const span = el.ownerDocument.createElement("span");
+      span.setAttribute(
+        "style",
+        [...style]
+          .filter(([k]) => !BOX_PROPS.has(k))
+          .map(([k, v]) => `${k}:${v}`)
+          .join(";"),
+      );
+      span.textContent = text;
+      const node = convert(span, unmapped);
+      if (node) out.push(node);
+    } else if (child.nodeType === 1) {
+      const node = convert(child as Element, unmapped);
+      if (node) out.push(node);
+    }
+  }
+  return out;
+}
+
+/**
+ * Inline markup, reduced to what is safe and meaningful to keep.
+ *
+ * Only the tags that mark up a run of words, and only their style attribute —
+ * which by this point carries the resolved cascade, so an `<i>` arrives
+ * already knowing it is italic at weight 500. Everything else goes: scripts
+ * and handlers because they must, hrefs and ids because a canvas layer has no
+ * use for them.
+ */
+const RUN_TAGS = new Set([
+  "b", "strong", "i", "em", "u", "s", "mark", "small", "sub", "sup", "span",
+  "code", "kbd", "abbr", "cite", "q", "time", "br", "wbr", "a", "label",
+]);
+
+function sanitiseRuns(el: Element): string {
+  const copy = el.cloneNode(true) as Element;
+  const walk = (node: Element): void => {
+    for (const child of Array.from(node.children)) {
+      const tag = child.tagName.toLowerCase();
+      if (!RUN_TAGS.has(tag)) {
+        child.replaceWith(...Array.from(child.childNodes));
+        continue;
+      }
+      const style = child.getAttribute("style");
+      for (const attr of Array.from(child.attributes)) {
+        child.removeAttribute(attr.name);
+      }
+      if (style) child.setAttribute("style", style);
+      walk(child);
+    }
+  };
+  walk(copy);
+  return copy.innerHTML;
+}
+
+/**
+ * True when the words are not all styled the same.
+ *
+ * A run wrapped in a tag that changes nothing — a stray `<span>` around a
+ * whole heading — is still one uniform run, and keeping markup for it would
+ * cost the layer its editable plain text for no gain.
+ */
+function hasMixedRuns(el: Element): boolean {
+  const own = getComputedStyle(el);
+  for (const child of Array.from(el.children)) {
+    const tag = child.tagName.toLowerCase();
+    if (tag === "br" || tag === "wbr") continue;
+    const style = getComputedStyle(child);
+    for (const prop of [
+      "font-style", "font-weight", "font-size", "color", "text-decoration-line",
+      "font-family", "letter-spacing", "background-color",
+    ]) {
+      if (style.getPropertyValue(prop) !== own.getPropertyValue(prop)) return true;
+    }
+  }
+  return false;
+}
+
 function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   const tag = el.tagName.toLowerCase();
   if (tag === "script" || tag === "style") return null;
@@ -654,7 +773,15 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   // Text inside something that paints or pads is a box with words in it, and
   // stays two nodes. Only a bare run of text becomes one.
   const boxed = textOnly && paintsBox(style);
-  const type = typeFor(el, textOnly && !boxed);
+  // A box that paints and holds words is a container, whatever its markup
+  // looked like. typeFor calls a childless element a rect, and `<div
+  // class="tag">Practice</div>` has no *element* children — so the split
+  // below handed a rect a text child. A rect is a leaf shape: it never lays
+  // anything out, so the text sat absolutely at its origin and the box never
+  // grew to fit. With 16px of padding on a box that stayed 32 wide, the word
+  // had zero room and broke mid-way, as "Pract/ice". Wrapping the same text
+  // in a span produced a frame and worked, which is the tell.
+  const type = boxed ? "frame" : typeFor(el, textOnly);
   const props: Partial<SceneNode> = {};
 
   // --- layout ------------------------------------------------------------
@@ -746,6 +873,19 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   const h = size(style.get("height"), "height", unmapped);
   props.sizeW = w.mode;
   props.sizeH = h.mode;
+
+  // `fit-content` is not `auto`. On a block element `auto` fills the
+  // container and `fit-content` shrinks to the words — opposite results from
+  // the same field, and the model has only the one field. So these keep
+  // their own spelling and go to the browser, which has all three.
+  // Without this a button written `width: fit-content` spanned its whole
+  // column, and no correct CSS the author added could shrink it.
+  for (const axis of ["width", "height"] as const) {
+    const raw = style.get(axis)?.trim();
+    if (raw && /^(fit-content|max-content|min-content)$/.test(raw)) {
+      passthrough[axis] = raw;
+    }
+  }
 
   // A block element with no width of its own fills the width available to it,
   // exactly as it would on a page. Only when it is out of flow does it shrink
@@ -881,6 +1021,12 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   // --- text --------------------------------------------------------------
   if (type === "text") {
     props.text = textOf(el);
+    // Formatting inside the run, when there is any worth keeping. The words
+    // survive either way; this is what keeps the italic word italic.
+    if (el.children.length > 0 && hasMixedRuns(el)) {
+      const runs = sanitiseRuns(el);
+      if (runs.trim()) props.richText = runs;
+    }
     const rawSize = style.get("font-size");
     if (unresolvable(rawSize)) unmapped.add(`font-size: ${rawSize!.trim()}`);
     const size = px(rawSize);
@@ -991,7 +1137,11 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
 
   if (Object.keys(passthrough).length) props.css = passthrough;
 
-  const name = el.getAttribute("layer-name") ?? undefined;
+  // A pseudo-element says so in the layer tree. Seeing "::after" next to a
+  // hero explains a box nobody wrote, which is otherwise a small mystery.
+  const pseudo = el.getAttribute("data-pseudo");
+  const name = el.getAttribute("layer-name")
+    ?? (pseudo ? `::${pseudo}` : undefined);
 
   // SVG is opaque; everything else recurses.
   // SVG is opaque, and a text node's inline markup is part of its own words
@@ -1004,16 +1154,19 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
         ? [textChildOf(el, style, unmapped)].filter(
             (c): c is ParsedNode => c !== null,
           )
-        : Array.from(el.children)
-            .map((c) => convert(c, unmapped))
-            .filter((c): c is ParsedNode => c !== null);
+        : childNodesOf(el, style, unmapped);
 
-  // A block element fills its container in flow, and shrink-wraps as an item
-  // in a flex row — same markup, different answer, decided by the parent.
-  // Down a column it keeps filling, because that is the cross axis and the
-  // default `align-items: stretch` genuinely does stretch it.
-  const flexDir = props.flex?.direction ?? "row";
-  if (props.layout === "flex" && !flexDir.startsWith("column")) {
+  // A block element fills its container in flow. As a flex item it does not:
+  // across a row it shrink-wraps, and down a column it is stretched by the
+  // default `align-items: stretch` — which looks like the same result but is
+  // not the same mechanism. Stretch yields to `align-self: flex-start` and to
+  // `width: fit-content`; a hard `width: 100%` overrules both. Imposing the
+  // width here is why every button came out the full width of its column and
+  // no amount of correct CSS on the button could shrink it.
+  //
+  // So a flex parent of any direction leaves its children's width alone and
+  // lets the layout do what CSS says it does.
+  if (props.layout === "flex") {
     for (const child of children) {
       if (child.blockFill) {
         child.props.sizeW = "auto";
@@ -1037,11 +1190,16 @@ function closeVoidClones(html: string): string {
 }
 
 export function parseHtml(html: string, containerWidth = 1440): ParseResult {
-  // Markup that brings its own stylesheet is resolved by the browser first,
-  // so a real page's design survives instead of only its structure.
-  const source = hasStylesheet(html)
-    ? inlineStylesheet(html, containerWidth)
-    : html;
+  // Every fragment goes through the browser, not just the ones carrying a
+  // stylesheet. Resolving only those meant two implementations of what markup
+  // means — the browser's, and a set of heuristics here for everything else —
+  // and the heuristics lost. They re-derived `display`, `width` and inline
+  // flow that the browser had already computed correctly, and every place
+  // they disagreed was a silent defect: a block filling a flex row, a
+  // fit-content button spanning its column, display:block not meaning flow.
+  //
+  // One authority. Mounting costs a layout pass; being wrong costs the design.
+  const source = inlineStylesheet(html, containerWidth);
 
   const doc = new DOMParser().parseFromString(
     `<div id="__root">${closeVoidClones(source)}</div>`,
@@ -1052,11 +1210,38 @@ export function parseHtml(html: string, containerWidth = 1440): ParseResult {
   // discarded — convert() hands them to the browser as raw CSS — so this is
   // reported only as a note about what the panel will not be able to edit.
   const unmapped = new Set<string>();
-  if (!root) return { nodes: [], ignored: [] };
+  if (!root) {
+    return {
+      nodes: [],
+      ignored: [],
+      conversion: { resolvedAtWidth: containerWidth, pseudoElements: 0, formattedRuns: 0 },
+    };
+  }
 
   const nodes = Array.from(root.children)
     .map((el) => convert(el, unmapped))
     .filter((n): n is ParsedNode => n !== null);
 
-  return { nodes, ignored: [...unmapped].sort() };
+  const count = (list: ParsedNode[]): { pseudo: number; runs: number } => {
+    let pseudo = 0;
+    let runs = 0;
+    const walk = (n: ParsedNode): void => {
+      if (n.props.name === "::before" || n.props.name === "::after") pseudo += 1;
+      if (n.props.richText) runs += 1;
+      for (const c of n.children) walk(c);
+    };
+    for (const n of list) walk(n);
+    return { pseudo, runs };
+  };
+  const tally = count(nodes);
+
+  return {
+    nodes,
+    ignored: [...unmapped].sort(),
+    conversion: {
+      resolvedAtWidth: containerWidth,
+      pseudoElements: tally.pseudo,
+      formattedRuns: tally.runs,
+    },
+  };
 }

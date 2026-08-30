@@ -11,6 +11,7 @@ import { registerViewTools } from "./mcp/viewTool";
 import { registerReviewTools } from "./mcp/reviewTools";
 import { registerFontTools } from "./mcp/fontTools";
 import { registerExportTools } from "./mcp/exportTools";
+import { registerCompareTools } from "./mcp/compareTools";
 
 // Tool implementations register once, before any connection can call them.
 registerReadTools();
@@ -21,6 +22,7 @@ registerViewTools();
 registerReviewTools();
 registerFontTools();
 registerExportTools();
+registerCompareTools();
 import { TabBar } from "./shell/TabBar";
 import { LeftPanel } from "./shell/LeftPanel";
 import { Toolbar } from "./shell/Toolbar";

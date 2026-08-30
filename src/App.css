@@ -1544,13 +1544,50 @@ body {
    and the node — text, icons, edges — turns to mush for the duration. It
    showed up exactly when someone was watching an agent build while zoomed in.
    A fade reads as an arrival just as well and leaves the glyphs vector-crisp. */
+/*
+ * A group arrives in two phases: structure, then paint.
+ *
+ * Only the roots of a write carry this — every descendant inherits it, so a
+ * container and its contents can never appear at different moments. They used
+ * to: each node animated on its own delay, and because a subtree is built
+ * depth-first the children ran *first*, so a button appeared as loose text
+ * that a box later wrapped itself around.
+ *
+ * The hold near the start is the structure phase. The subtree is at its final
+ * geometry from the first frame, so ArrivalOutlines can draw the real boxes
+ * over the top while the paint underneath is still faint. Then paint comes up
+ * and the outlines go.
+ */
 .scene-node.is-arriving {
-  animation: node-arrive 420ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+  animation: node-reveal 900ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
 }
 
-@keyframes node-arrive {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+@keyframes node-reveal {
+  0%   { opacity: 0; }
+  10%  { opacity: 0.14; }
+  55%  { opacity: 0.14; }
+  100% { opacity: 1; }
+}
+
+/* Structure, drawn over the group while its paint fades up. Screen space, so
+   a hairline stays a hairline however far the canvas is zoomed. */
+.arrival-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.arrival-box {
+  position: absolute;
+  border: 1px solid #2B7FFF;
+  animation: arrival-outline 900ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes arrival-outline {
+  0%   { opacity: 0; }
+  8%   { opacity: 0.85; }
+  55%  { opacity: 0.85; }
+  100% { opacity: 0; }
 }
 
 /* Pulsing border while the agent is still working on this node. */

@@ -8,24 +8,22 @@ import { create } from "zustand";
  * canvas *is*; this records what is happening to it right now.
  */
 
-/** How long a node keeps its "just arrived" treatment. */
-const ARRIVAL_MS = 900;
-/** Gap between staggered arrivals, so a burst plays as a build. */
-const STAGGER_MS = 110;
 /**
- * The longest anything waits to appear.
+ * How long a group's entrance takes, start to finish.
  *
- * The stagger is there so a burst of writes reads as a build rather than a
- * single flash. Applied per node without a ceiling it does the opposite: a
- * node's entrance begins at `opacity: 0`, so on a page of two hundred nodes
- * the last one is invisible for twenty-two seconds — and since the queue
- * carries across calls, whole sections sit hidden while the agent has moved
- * on. What looked like a slow renderer was finished work being held back.
- *
- * A group still arrives in sequence; the whole group is just guaranteed to be
- * on screen inside this.
+ * One timeline for the whole group, not per node — see `noteWrite`.
  */
-const MAX_STAGGER_MS = 600;
+const REVEAL_MS = 900;
+
+/**
+ * How much of that is the structure phase.
+ *
+ * The group holds at a low opacity while its outlines are drawn, then paint
+ * fades up and the outlines fade out. Kept here rather than only in CSS
+ * because the overlay drawing those outlines has to run on the same clock.
+ */
+const STRUCTURE_MS = 500;
+
 /** How long a finished build keeps its chip before fading out. */
 const DONE_MS = 1600;
 
@@ -40,7 +38,7 @@ interface ActivityStore {
   arrivals: Record<string, number>;
 
   beginBuild: () => void;
-  noteWrite: (op: string, ids: string[]) => void;
+  noteWrite: (op: string, ids: string[], roots?: string[]) => void;
   endBuild: () => void;
 }
 
@@ -64,22 +62,20 @@ export const useActivity = create<ActivityStore>((set, get) => ({
   beginBuild: () =>
     set({ building: true, status: "Designing", touched: [], arrivals: {} }),
 
-  noteWrite: (op, ids) => {
+  noteWrite: (op, ids, roots) => {
     const now = Date.now();
     const state = get();
-    // Stagger from the end of the queue, so a burst of calls plays out at a
-    // steady rate rather than landing on screen all at once.
-    const queued = Object.values(state.arrivals).filter((t) => t > now).length;
-    const arrivals = { ...state.arrivals };
 
-    // Spread this batch across the window rather than giving each node a
-    // fixed gap, so a six-node group and a sixty-node one both finish
-    // arriving at the same moment.
-    const pending = queued + ids.length;
-    const step = Math.min(STAGGER_MS, MAX_STAGGER_MS / Math.max(1, pending));
-    ids.forEach((id, i) => {
-      arrivals[id] = now + Math.min(MAX_STAGGER_MS, (queued + i) * step);
-    });
+    // Only the roots of this write get an entrance, and they all get the
+    // same one. Staggering per node meant a container arrived separately
+    // from its own contents — and because a subtree is built depth-first,
+    // it arrived *after* them, so a button appeared as loose text that a
+    // box later wrapped itself around. A group is one thing appearing, so
+    // it is one animation, and every child inherits it from its root.
+    const entering = roots && roots.length ? roots : ids;
+    const arrivals = { ...state.arrivals };
+    for (const id of entering) arrivals[id] = now;
+
     set({
       building: true,
       status: `${describe(op)}…`,
@@ -87,16 +83,14 @@ export const useActivity = create<ActivityStore>((set, get) => ({
       arrivals,
     });
 
-    // Clear each arrival once its entrance has played.
-    const last = Math.max(...Object.values(arrivals), now);
     setTimeout(() => {
       const cur = get().arrivals;
       const next: Record<string, number> = {};
       for (const [id, at] of Object.entries(cur)) {
-        if (at + ARRIVAL_MS > Date.now()) next[id] = at;
+        if (at + REVEAL_MS > Date.now()) next[id] = at;
       }
       set({ arrivals: next });
-    }, last - now + ARRIVAL_MS + 50);
+    }, REVEAL_MS + 50);
   },
 
   endBuild: () => {
@@ -108,4 +102,4 @@ export const useActivity = create<ActivityStore>((set, get) => ({
   },
 }));
 
-export { ARRIVAL_MS, STAGGER_MS };
+export { REVEAL_MS, STRUCTURE_MS };

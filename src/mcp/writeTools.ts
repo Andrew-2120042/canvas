@@ -359,6 +359,17 @@ export function registerWriteTools(): void {
       fill: args.background ? String(args.background) : "#FFFFFF",
       // A document stacks its sections; it does not scatter them.
       layout: "flow",
+      // The height is a floor, not a ceiling. The board is drawn at its full
+      // size the moment it is made — a whole empty page, before anything is
+      // on it — so every section that follows lands into space already
+      // allocated for it, rather than the page growing a strip at a time
+      // underneath the work.
+      //
+      // It still hugs past that floor, so underestimating the page costs
+      // nothing: the board extends. Giving it a fixed height instead is what
+      // left content hanging off the bottom edge onto bare canvas.
+      minHeight: height,
+      sizeH: "auto",
     });
     noteAgentWrite("create", [id]);
     return { id, x, y, width, height, device };
