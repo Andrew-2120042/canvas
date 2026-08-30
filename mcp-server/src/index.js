@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { AppBridge } from "./appBridge.js";
+import { INSTRUCTIONS, guide, guideTopics } from "./guide.js";
 
 const PORT = Number(process.env.CANVAS_MCP_PORT ?? process.argv[2] ?? 4319);
 /** Loopback only. This server is one user's own agent talking to their own
@@ -16,7 +17,25 @@ const bridge = new AppBridge();
 function buildServer() {
   const server = new McpServer(
     { name: "canvas", version: "0.1.0" },
-    { capabilities: { tools: {} } },
+    // Sent once at connection. Tool schemas say what can be called; this says
+    // how to work — which is what actually decides whether the result looks
+    // designed. See guide.js.
+    { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
+  );
+
+  server.registerTool(
+    "get_guide",
+    {
+      title: "Get guide",
+      description:
+        "How to design well on this canvas: colour, type, spacing, flex " +
+        "layout, the exact CSS supported, and how to draw icons. Read this " +
+        "before your first build. Omit topic for all of it.",
+      inputSchema: {
+        topic: z.enum(["design-basics", "layout", "css", "icons"]).optional(),
+      },
+    },
+    async (args) => ({ content: [{ type: "text", text: guide(args?.topic) }] }),
   );
 
   server.registerTool(
@@ -59,6 +78,19 @@ function buildServer() {
   );
 
   server.registerTool(
+    "get_tree_summary",
+    {
+      title: "Get tree summary",
+      description:
+        "Counts and top-level nodes only — cheap to call on a large file. " +
+        "Prefer this over get_canvas_state to get your bearings, then use " +
+        "get_node on whatever you actually need.",
+      inputSchema: {},
+    },
+    async () => text(await bridge.call("get_tree_summary")),
+  );
+
+  server.registerTool(
     "get_selection",
     {
       title: "Get selection",
@@ -88,10 +120,15 @@ function buildServer() {
       title: "Get screenshot",
       description:
         "A PNG of the current page, or of one node when nodeId is given. " +
-        "Use this to see the design rather than only reading its structure.",
+        "Use this to see the design rather than only reading its structure. " +
+        "The default 1x is enough for layout, spacing and colour; pass " +
+        "scale: 2 only to read small text or inspect fine detail, since a " +
+        "capture costs tokens in proportion to its pixel count.",
       inputSchema: {
         nodeId: z.string().optional()
           .describe("Capture just this node; omit for the whole page."),
+        scale: z.number().optional()
+          .describe("Render scale. 1 (default) for layout review, 2 for fine detail."),
       },
     },
     async (args) => {
@@ -145,13 +182,20 @@ function buildServer() {
     "update_node",
     {
       title: "Update node",
-      description: "Change any subset of a node's geometry or style.",
+      description:
+        "Change any subset of a node's geometry or style. To stop a frame " +
+        "clipping its content, set sizeH to \"auto\" so it hugs instead of " +
+        "guessing a taller height.",
       inputSchema: {
         id: z.string(),
         x: z.number().optional(),
         y: z.number().optional(),
         width: z.number().optional(),
         height: z.number().optional(),
+        sizeW: z.enum(["fixed", "auto", "fill"]).optional()
+          .describe("fixed = the given width; auto = hug content; fill = fill the parent."),
+        sizeH: z.enum(["fixed", "auto", "fill"]).optional()
+          .describe("fixed = the given height; auto = hug content; fill = fill the parent."),
         name: z.string().optional(),
         fill: z.string().optional(),
         opacity: z.number().optional(),
@@ -167,6 +211,68 @@ function buildServer() {
       },
     },
     async (args) => text(await bridge.call("update_node", args)),
+  );
+
+  server.registerTool(
+    "update_nodes",
+    {
+      title: "Update nodes",
+      description:
+        "Change many nodes in one call. Each entry applies one set of " +
+        "properties to every node id listed with it. Prefer this over " +
+        "repeated update_node calls: it is one round trip and one undo step. " +
+        "To stop a frame clipping its content, set sizeH to \"auto\".",
+      inputSchema: {
+        updates: z.array(z.object({
+          nodeIds: z.array(z.string()),
+          styles: z.record(z.any())
+            .describe("Any properties update_node accepts, applied to every id above."),
+        })).describe("At least one entry."),
+      },
+    },
+    async (args) => text(await bridge.call("update_nodes", args)),
+  );
+
+  server.registerTool(
+    "set_text_content",
+    {
+      title: "Set text content",
+      description:
+        "Replace the text of text nodes, batched. Use this rather than " +
+        "rewriting HTML whenever only the words change — it is much cheaper " +
+        "and keeps node ids intact.",
+      inputSchema: {
+        updates: z.array(z.object({
+          nodeId: z.string(),
+          text: z.string(),
+        })).describe("One entry per text node."),
+      },
+    },
+    async (args) => text(await bridge.call("set_text_content", args)),
+  );
+
+  server.registerTool(
+    "move_nodes",
+    {
+      title: "Move nodes",
+      description:
+        "Reorder or reparent existing nodes while keeping their ids, so any " +
+        "reference you already hold stays valid — use this rather than " +
+        "rewriting HTML just to change structure. Moves apply in order, each " +
+        "seeing the previous one's result. In a flex parent this changes " +
+        "visual order; otherwise it changes stacking, last child on top. " +
+        "Returns the new child list of every parent that changed.",
+      inputSchema: {
+        moves: z.array(z.object({
+          nodeId: z.string(),
+          parentId: z.string().optional()
+            .describe('A frame to move into, or "root" for the page itself. Omit to keep the current parent.'),
+          index: z.number().optional()
+            .describe("Position among the children. Omit to append. Clamped to the valid range."),
+        })).describe("At least one move."),
+      },
+    },
+    async (args) => text(await bridge.call("move_nodes", args)),
   );
 
   server.registerTool(
@@ -194,6 +300,145 @@ function buildServer() {
       },
     },
     async (args) => text(await bridge.call("duplicate_node", args)),
+  );
+
+  server.registerTool(
+    "write_html",
+    {
+      title: "Write HTML",
+      description:
+        "Create nodes from HTML and CSS — the main way to build a design. " +
+        "IMAGES: put an absolute file path in <img src> — the app reads the " +
+        "file itself. Never base64 a local image into a data URL and never " +
+        "shrink one to make it fit; a path costs about forty characters and " +
+        "keeps the picture at full resolution. " +
+        "One call can carry a whole screen; prefer it over building a design " +
+        "node by node. Real flexbox is supported (display:flex, " +
+        "flex-direction, gap, flex-wrap, justify-content, align-items, " +
+        "align-self, flex-grow, flex-shrink, the flex shorthand, padding), " +
+        "along with background colours and linear/radial gradients, border " +
+        "and single-side borders, box-shadow, per-corner border-radius, " +
+        "transform:rotate, opacity, overflow:hidden, and the text properties " +
+        "font-size/weight/line-height/letter-spacing/text-align/color. " +
+        "For width and height use a pixel length, 100% to fill the parent, " +
+        "or leave it out to size to the content — other percentages have no " +
+        "equivalent. Inline <svg> is kept as-is, which is how icons and " +
+        "illustrations are drawn. Add layer-name=\"...\" to any element to " +
+        "name the layer. There is no CSS Grid and no stylesheet support: use " +
+        "flex, and put styles in the style attribute. Anything not " +
+        "Write ordinary CSS — anything this canvas has no special handling " +
+        "for is passed to the browser unchanged, so it behaves as it would " +
+        "on a web page. ignoredCss lists only what genuinely could not be " +
+        "applied; it is normally empty.",
+      inputSchema: {
+        html: z.string().describe("A complete HTML fragment with inline styles."),
+        targetNodeId: z.string().optional()
+          .describe("A frame to insert into. Omit to add at page level."),
+        mode: z.enum(["insert-children", "replace-children"]).optional()
+          .describe("Append to the target, or replace what it holds. Default append."),
+      },
+    },
+    async (args) => text(await bridge.call("write_html", args)),
+  );
+
+  server.registerTool(
+    "align_nodes",
+    {
+      title: "Align nodes",
+      description:
+        "Align nodes to a shared edge or centre, and/or space them evenly. " +
+        "Aligning needs two nodes, distributing needs three. Runs the same " +
+        "actions as the panel's alignment bar.",
+      inputSchema: {
+        ids: z.array(z.string()),
+        edge: z.enum(["left", "hcenter", "right", "top", "vcenter", "bottom"]).optional(),
+        distribute: z.enum(["h", "v"]).optional()
+          .describe("Even gaps along this axis, holding the outermost two in place."),
+      },
+    },
+    async (args) => text(await bridge.call("align_nodes", args)),
+  );
+
+  server.registerTool(
+    "list_comments",
+    {
+      title: "List comments",
+      description:
+        "Comments the user has left on the canvas, with the page and the " +
+        "point each is pinned to. Read these before acting on feedback — an " +
+        "open comment is work someone is asking for. Shows open ones by default.",
+      inputSchema: {
+        status: z.enum(["open", "resolved", "all"]).optional(),
+        pageId: z.string().optional().describe("Restrict to one page."),
+      },
+    },
+    async (args) => text(await bridge.call("list_comments", args)),
+  );
+
+  server.registerTool(
+    "resolve_comment",
+    {
+      title: "Resolve comment",
+      description:
+        "Mark a comment resolved once its feedback is actually addressed in " +
+        "the design, or pass resolved:false to reopen it. Never resolve a " +
+        "comment you did not act on.",
+      inputSchema: {
+        id: z.string(),
+        resolved: z.boolean().optional().describe("Defaults to true."),
+      },
+    },
+    async (args) => text(await bridge.call("resolve_comment", args)),
+  );
+
+  server.registerTool(
+    "list_pages",
+    {
+      title: "List pages",
+      description:
+        "Every page in the open file with its node count, and which one is " +
+        "current. Work lands on the current page, so check this before " +
+        "assuming where a design will appear.",
+      inputSchema: {},
+    },
+    async (args) => text(await bridge.call("list_pages", args)),
+  );
+
+  server.registerTool(
+    "set_page",
+    {
+      title: "Set page",
+      description: "Switch the file to a different page. Later writes land there.",
+      inputSchema: { pageId: z.string() },
+    },
+    async (args) => text(await bridge.call("set_page", args)),
+  );
+
+  server.registerTool(
+    "create_page",
+    {
+      title: "Create page",
+      description:
+        "Add a page to the open file. Does not switch to it — call set_page " +
+        "with the returned id to start working there.",
+      inputSchema: { name: z.string().optional() },
+    },
+    async (args) => text(await bridge.call("create_page", args)),
+  );
+
+  server.registerTool(
+    "focus_node",
+    {
+      title: "Focus node",
+      description:
+        "Pan and zoom the user's canvas to a node, so they are looking at " +
+        "what you are talking about. Omit zoom to fit the node in the view.",
+      inputSchema: {
+        nodeId: z.string(),
+        zoom: z.number().optional().describe("1 = 100%. Omit to fit."),
+      },
+    },
+    async (args) => text(await bridge.call("focus_node", args)),
   );
 
   server.registerTool(

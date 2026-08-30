@@ -6,11 +6,17 @@ import { startMcp, stopMcp } from "./mcp/bridge";
 import { registerReadTools } from "./mcp/readTools";
 import { registerScreenshotTool } from "./mcp/screenshot";
 import { registerWriteTools } from "./mcp/writeTools";
+import { registerHtmlTool } from "./mcp/htmlTool";
+import { registerViewTools } from "./mcp/viewTool";
+import { registerReviewTools } from "./mcp/reviewTools";
 
 // Tool implementations register once, before any connection can call them.
 registerReadTools();
 registerScreenshotTool();
 registerWriteTools();
+registerHtmlTool();
+registerViewTools();
+registerReviewTools();
 import { TabBar } from "./shell/TabBar";
 import { LeftPanel } from "./shell/LeftPanel";
 import { Toolbar } from "./shell/Toolbar";

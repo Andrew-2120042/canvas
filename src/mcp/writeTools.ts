@@ -1,4 +1,4 @@
-import { activeFile, useDoc } from "../document/store";
+import { activeFile, useDoc, type AlignEdge } from "../document/store";
 import { noteAgentWrite } from "./buildScope";
 import type { NodeId, NodeType, SceneNode } from "../document/types";
 import { registerTool } from "./bridge";
@@ -52,6 +52,17 @@ function stylePatch(args: Record<string, unknown>): Partial<SceneNode> {
     patch.opacity = o;
   }
   if (args.radius !== undefined) patch.radius = Math.max(0, num(args.radius, "radius"));
+  // How the node sizes itself. "auto" is what stops a frame clipping: it hugs
+  // its content instead of holding a height someone guessed.
+  for (const axis of ["sizeW", "sizeH"] as const) {
+    const v = args[axis];
+    if (v === undefined) continue;
+    const mode = String(v);
+    if (!["fixed", "auto", "fill"].includes(mode)) {
+      throw new Error(`${axis} must be "fixed", "auto" or "fill"`);
+    }
+    patch[axis] = mode as SceneNode["sizeW"];
+  }
   if (args.visible !== undefined) patch.visible = !!args.visible;
   if (args.locked !== undefined) patch.locked = !!args.locked;
   if (args.text !== undefined) patch.text = String(args.text);
@@ -165,9 +176,143 @@ export function registerWriteTools(): void {
     ids.forEach(requireNode);
     const offset = args.offset === undefined ? 10 : num(args.offset, "offset");
     noteAgentWrite("duplicate", ids);
-    const made = useDoc.getState().duplicateNodes(ids, offset);
+    const { made, map } = useDoc.getState().duplicateNodes(ids, offset);
     noteAgentWrite("duplicate", made);
-    return { created: made };
+    // The map lets the caller style or retext a cloned child straight away,
+    // instead of reading back the tree it just created.
+    return { created: made, descendantIdMap: map };
+  });
+
+  /**
+   * Restructure without rewriting.
+   *
+   * Reordering or reparenting through HTML would mint new ids and invalidate
+   * every reference the caller is holding. This keeps them.
+   */
+  /**
+   * Many nodes, one call.
+   *
+   * A design change is usually a change to a set of nodes — every row's
+   * label, a group's fill. One call per node makes that cost a round trip and
+   * a result payload each, for what is one edit conceptually, and it lands as
+   * several undo steps unless every call happens to share a gesture key.
+   */
+  registerTool("update_nodes", (args) => {
+    const updates = Array.isArray(args.updates) ? args.updates : [];
+    if (updates.length === 0) throw new Error("updates is required");
+
+    const key = gestureKey("update", updates.flatMap((u) => {
+      const e = u as Record<string, unknown>;
+      return Array.isArray(e.nodeIds) ? e.nodeIds.map(String) : [String(e.nodeId ?? "")];
+    }));
+
+    const touched: string[] = [];
+    const st = useDoc.getState();
+    for (const raw of updates) {
+      const entry = raw as Record<string, unknown>;
+      const ids = Array.isArray(entry.nodeIds)
+        ? entry.nodeIds.map(String)
+        : [String(entry.nodeId ?? "")];
+      const props = (entry.styles ?? entry) as Record<string, unknown>;
+
+      for (const id of ids) {
+        requireNode(id);
+        const rect: Partial<{ x: number; y: number; width: number; height: number }> = {};
+        if (props.x !== undefined) rect.x = num(props.x, "x");
+        if (props.y !== undefined) rect.y = num(props.y, "y");
+        if (props.width !== undefined) rect.width = Math.max(1, num(props.width, "width"));
+        if (props.height !== undefined) rect.height = Math.max(1, num(props.height, "height"));
+        if (Object.keys(rect).length) st.setNodeRect(id, rect, key);
+
+        const patch = stylePatch(props);
+        if (Object.keys(patch).length) st.updateNode(id, patch, key);
+        touched.push(id);
+      }
+    }
+    noteAgentWrite("update", touched);
+    return { updated: touched };
+  });
+
+  /** Text only, batched. Far cheaper than rewriting the markup around it. */
+  registerTool("set_text_content", (args) => {
+    const updates = Array.isArray(args.updates) ? args.updates : [];
+    if (updates.length === 0) throw new Error("updates is required");
+
+    const ids = updates.map((u) => String((u as Record<string, unknown>).nodeId ?? ""));
+    const key = gestureKey("text", ids);
+    const st = useDoc.getState();
+    for (const raw of updates) {
+      const entry = raw as Record<string, unknown>;
+      const id = String(entry.nodeId ?? "");
+      const node = requireNode(id);
+      if (node.type !== "text") {
+        throw new Error(`node "${id}" is a ${node.type}, not text`);
+      }
+      st.updateNode(id, { text: String(entry.text ?? entry.textContent ?? "") }, key);
+    }
+    noteAgentWrite("text", ids);
+    return { updated: ids };
+  });
+
+  registerTool("move_nodes", (args) => {
+    const raw = Array.isArray(args.moves) ? args.moves : [];
+    if (raw.length === 0) throw new Error("moves is required");
+
+    const moves = raw.map((m) => {
+      const mv = m as Record<string, unknown>;
+      const id = String(mv.nodeId ?? mv.id ?? "");
+      requireNode(id);
+      const out: { id: string; parent?: string | null; index?: number } = { id };
+      if (mv.parentId !== undefined) {
+        // "root" is how a caller asks for the page itself, which has no id.
+        const p = mv.parentId === null || mv.parentId === "root"
+          ? null
+          : String(mv.parentId);
+        if (p !== null) {
+          const target = requireNode(p);
+          if (target.type !== "frame") {
+            throw new Error("only a frame can contain other nodes");
+          }
+        }
+        out.parent = p;
+      }
+      if (mv.index !== undefined) out.index = num(mv.index, "index");
+      return out;
+    });
+
+    noteAgentWrite("move", moves.map((m) => m.id));
+    const affected = useDoc.getState().moveNodes(moves);
+    return {
+      moved: moves.map((m) => m.id),
+      // The post-move child list of every parent that changed, so the caller
+      // does not need a follow-up read to know where things ended up.
+      affectedParents: affected.map((a) => ({
+        parentId: a.parent ?? "root",
+        children: a.children,
+      })),
+    };
+  });
+
+  /** Align or evenly space a set of nodes — the same actions the panel's
+   *  alignment bar runs, so both paths behave identically. */
+  registerTool("align_nodes", (args) => {
+    const ids = (Array.isArray(args.ids) ? args.ids : []).map(String);
+    ids.forEach(requireNode);
+    const edge = args.edge ? String(args.edge) : null;
+    const axis = args.distribute ? String(args.distribute) : null;
+
+    if (edge) {
+      if (ids.length < 2) throw new Error("aligning needs at least two nodes");
+      noteAgentWrite("align", ids);
+      useDoc.getState().align(ids, edge as AlignEdge);
+    }
+    if (axis) {
+      if (ids.length < 3) throw new Error("distributing needs at least three nodes");
+      noteAgentWrite("distribute", ids);
+      useDoc.getState().distribute(ids, axis === "v" ? "v" : "h");
+    }
+    if (!edge && !axis) throw new Error("pass edge, distribute, or both");
+    return { ids, edge, distribute: axis };
   });
 
   registerTool("set_selection", (args) => {
