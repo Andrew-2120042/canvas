@@ -51,8 +51,7 @@ you set on the container above it.
 - A pixel length is a fixed size.
 - 100% fills the parent on that axis.
 - Omitting width or height sizes the node to its content.
-Other percentages have no equivalent in the node model and are reported in
-ignoredCss.
+Other percentages resolve against the containing block, as they do in CSS.
 
 ## Text sizing and wrapping
 A text node with no width is measured from its content, so its width is decided
@@ -92,22 +91,39 @@ A flex child will not shrink below its content by default, so one long label pus
 - A pixel length is a fixed size.
 - 100% fills the parent on that axis.
 - Omitting width or height sizes to the content.
-Other percentages have no equivalent and come back in ignoredCss.
+Other percentages resolve the way CSS resolves them, against the containing
+block. The panel shows a computed pixel number for anything it cannot hold as
+a percentage, but what renders is the percentage.
 
 ## Frames that clip
 Artboard height is a starting point. When content grows past it the frame clips — a half-cut title is the usual symptom. Remove the height so the frame hugs its content, or set the height once you know the real number. Do not guess a bigger one.
 `,
 
-  css: `# Supported CSS
+  css: `# CSS
 
-Put styles in the style attribute; there are no stylesheets and no CSS Grid.
+This is a real browser. Write the CSS you would write for a web page.
+
+Styles can go in a style attribute or in a <style> block — a stylesheet is
+resolved by the browser before parsing, so real page markup can be pasted in
+as it stands, class names and all.
+
+Grid works: display:grid, grid-template-columns, gap, justify-items. So do
+margin (including collapsing), percentage padding and margins, aspect-ratio,
+backdrop-filter, and position:absolute with left/top/right/bottom in pixels
+or percentages — all with their ordinary meanings, because the engine
+computing them is the same one a browser uses.
+
+The panel has first-class fields for a subset of this, which is what it can
+edit by hand; everything else is held as raw CSS on the node and rendered
+unchanged. The distinction affects the panel, not the result.
+
+Two places the model, rather than the browser, has the last word:
+- A transform renders but does not move the node's recorded position, so
+  anything reading geometry sees the untransformed box.
+- Nothing is inherited. Set font-size, weight and color on the text node
+  itself; a value set on a container above it does not cascade down.
 
 Layout: display:flex, flex-direction, gap, flex-wrap, justify-content, align-items, align-self, flex-grow, flex-shrink, the flex shorthand, padding (and per-side), width, height, min-width, min-height.
-Position: position:absolute with left/top in pixels, inside any parent.
-Percentage offsets are not supported — to centre something, use
-justify-content/align-items on its parent rather than left:50% with a
-translate. A transform is applied when rendering but does not move the node's
-recorded position, so anything that reads geometry sees the untransformed box.
 Paint: background (colour, linear-gradient, radial-gradient), color, opacity, border, per-side borders, box-shadow, border-radius including per-corner, overflow:hidden, transform:rotate().
 Text: font-size, font-weight, line-height, letter-spacing, text-align, color,
 font-family, white-space (normal, pre, pre-wrap, nowrap — use nowrap on a
@@ -125,7 +141,10 @@ SVG: inline <svg> is kept verbatim — this is how icons and illustrations are d
 
 layer-name="…" names the layer in the user's tree. Unnamed frames all show as "Frame", which makes the layer list unreadable.
 
-Anything unsupported comes back in ignoredCss. Read it — those declarations did not take effect, so whatever you were relying on them for is not there.`,
+ignoredCss lists declarations that did not take effect. It is normally empty,
+and it means exactly what it says — a property held as raw CSS rather than a
+panel field is rendering, and is not listed. When something is in there, it is
+genuinely not there.`,
 
   icons: `# Icons
 

@@ -61,6 +61,20 @@ const KNOWN = new Set([
   "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
 ]);
 
+/**
+ * Container properties the flex fields claim.
+ *
+ * They are only the panel's to own when the element is actually a flex
+ * container. On a grid they mean something the flex model cannot hold, and
+ * consuming them there is how `display:grid; gap:10px` lost its gutters —
+ * the gap went into a flex layout that was never built, and the grid was
+ * handed to the browser without it.
+ */
+const FLEX_CONTAINER_PROPS = new Set([
+  "gap", "row-gap", "column-gap", "flex-direction", "flex-wrap",
+  "justify-content", "align-items", "align-content",
+]);
+
 function parseStyle(text: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const part of text.split(";")) {
@@ -607,9 +621,15 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   // Anything without a first-class field is passed straight through to the
   // browser rather than discarded. The canvas is real CSS; a property this
   // parser has never heard of is still something the engine understands.
+  const displayValue = style.get("display")?.trim();
+  const isFlexContainer =
+    displayValue === "flex" || displayValue === "inline-flex";
+
   const passthrough: Record<string, string> = {};
   for (const [key, value] of style) {
-    if (!KNOWN.has(key)) passthrough[key] = value;
+    const ownedByPanel =
+      KNOWN.has(key) && (isFlexContainer || !FLEX_CONTAINER_PROPS.has(key));
+    if (!ownedByPanel) passthrough[key] = value;
   }
 
   // A property the panel *does* own can still carry a value no field can hold
@@ -942,7 +962,14 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
       // Entries are recorded either as "prop" or as "prop: value".
       const prop = entry.split(":")[0].trim();
       const value = style.get(prop);
-      if (value !== undefined) passthrough[prop] = value;
+      if (value === undefined) continue;
+      passthrough[prop] = value;
+      // It renders. `ignoredCss` is the one channel saying what did not take
+      // effect, so listing something the browser is about to apply teaches
+      // the caller to distrust the whole list — and then to stop using the
+      // feature it was wrongly warned about. `display:grid` was reported as
+      // ignored while laying out correctly.
+      unmapped.delete(entry);
     }
   }
 

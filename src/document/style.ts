@@ -133,12 +133,18 @@ export function layoutCss(
     if (node.alignSelf) css.alignSelf = alignValue(node.alignSelf);
   } else {
     css.position = "absolute";
-    // A node pinned to the right or bottom edge says so in its own CSS, and
-    // an offset from the opposite edge would win over it. The model stores a
-    // left/top for everything, so it has to stand aside where the markup was
-    // explicit about the other side.
-    if (node.css?.right === undefined) css.left = node.x;
-    if (node.css?.bottom === undefined) css.top = node.y;
+    // The model stores a left/top for every node, but the markup may have
+    // been explicit about where this one goes — pinned to the opposite edge,
+    // or offset by a percentage the model has no field for. Either way the
+    // stored number is a placeholder, and emitting it would win over what was
+    // actually asked for. So it stands aside whenever the node's own CSS
+    // already positions it on that axis.
+    if (node.css?.left === undefined && node.css?.right === undefined) {
+      css.left = node.x;
+    }
+    if (node.css?.top === undefined && node.css?.bottom === undefined) {
+      css.top = node.y;
+    }
   }
 
   // "auto" lets content decide; "fill" takes the whole of the parent on that
