@@ -3,6 +3,7 @@ import type {
   SpacingValue,
 } from "../types";
 import type { BorderStyle, ShadowStyle } from "../style";
+import { hasStylesheet, inlineStylesheet } from "./resolveCss";
 
 /**
  * HTML and CSS into canvas nodes.
@@ -440,6 +441,30 @@ const BLOCK_TAGS = new Set([
   "figure", "blockquote", "pre", "table", "fieldset", "hr",
 ]);
 
+/**
+ * An element's text, with line breaks preserved.
+ *
+ * textContent alone drops `<br>` entirely, so a two-line heading collapsed
+ * onto one. Walking the nodes keeps the break as the newline it stands for,
+ * and the node model already renders newlines because text nodes wrap.
+ */
+function textOf(el: Element): string {
+  let out = "";
+  const walk = (node: Node): void => {
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === 3) out += child.textContent ?? "";
+      else if (child.nodeType === 1) {
+        const tag = (child as Element).tagName.toLowerCase();
+        if (tag === "br") out += "\n";
+        else walk(child);
+      }
+    }
+  };
+  walk(el);
+  // Collapse runs of whitespace the way HTML does, but keep real newlines.
+  return out.replace(/[^\S\n]+/g, " ").replace(/ *\n */g, "\n").trim();
+}
+
 /** Which node type an element becomes. */
 function typeFor(el: Element, hasTextOnly: boolean): NodeType {
   const tag = el.tagName.toLowerCase();
@@ -451,8 +476,35 @@ function typeFor(el: Element, hasTextOnly: boolean): NodeType {
 }
 
 /** True when the element's content is just text. */
+/**
+ * Elements that mark up a run of text rather than box it.
+ *
+ * These carry meaning about the words around them, not layout, so an element
+ * containing only these is still one piece of text.
+ */
+const INLINE_TAGS = new Set([
+  "a", "b", "strong", "i", "em", "span", "small", "u", "s", "mark", "sub",
+  "sup", "code", "kbd", "abbr", "cite", "q", "time", "label", "br", "wbr",
+]);
+
+/** True when every child is inline markup rather than a box. */
+function inlineOnly(el: Element): boolean {
+  return Array.from(el.children).every((c) =>
+    INLINE_TAGS.has(c.tagName.toLowerCase()),
+  );
+}
+
+/**
+ * True when this element's content is a run of text.
+ *
+ * Inline children do not disqualify it. Treating them as boxes is what threw
+ * the surrounding words away: the parser walked `el.children`, which lists
+ * elements only, so in `<i>JOIN</i> THE THRILL` the bare text node holding
+ * "THE THRILL" was never visited and simply vanished. That is most real
+ * markup — any sentence with a bold word in it.
+ */
 function isTextOnly(el: Element): boolean {
-  if (el.children.length > 0) return false;
+  if (!inlineOnly(el)) return false;
   return (el.textContent ?? "").trim().length > 0;
 }
 
@@ -728,7 +780,7 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
 
   // --- text --------------------------------------------------------------
   if (type === "text") {
-    props.text = (el.textContent ?? "").trim();
+    props.text = textOf(el);
     const rawSize = style.get("font-size");
     if (unresolvable(rawSize)) unmapped.add(`font-size: ${rawSize!.trim()}`);
     const size = px(rawSize);
@@ -835,8 +887,11 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   const name = el.getAttribute("layer-name") ?? undefined;
 
   // SVG is opaque; everything else recurses.
+  // SVG is opaque, and a text node's inline markup is part of its own words
+  // rather than a set of child boxes — descending into it would duplicate the
+  // text it already carries.
   const children: ParsedNode[] =
-    type === "svg"
+    type === "svg" || type === "text"
       ? []
       : Array.from(el.children)
           .map((c) => convert(c, unmapped))
@@ -856,9 +911,15 @@ function closeVoidClones(html: string): string {
   return html.replace(/<x-clone\b([^>]*?)\/>/gi, "<x-clone$1></x-clone>");
 }
 
-export function parseHtml(html: string): ParseResult {
+export function parseHtml(html: string, containerWidth = 1440): ParseResult {
+  // Markup that brings its own stylesheet is resolved by the browser first,
+  // so a real page's design survives instead of only its structure.
+  const source = hasStylesheet(html)
+    ? inlineStylesheet(html, containerWidth)
+    : html;
+
   const doc = new DOMParser().parseFromString(
-    `<div id="__root">${closeVoidClones(html)}</div>`,
+    `<div id="__root">${closeVoidClones(source)}</div>`,
     "text/html",
   );
   const root = doc.getElementById("__root");

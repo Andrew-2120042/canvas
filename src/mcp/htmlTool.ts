@@ -18,6 +18,12 @@ import { noteAgentWrite } from "./buildScope";
  * rather than repeatedly as text arrives.
  */
 
+/** A readable layer name taken from a text node's own content. */
+function layerNameFor(text: string): string {
+  const line = text.split("\n")[0].trim().replace(/\s+/g, " ");
+  return line.length > 32 ? `${line.slice(0, 31)}…` : line || "Text";
+}
+
 /** Flatten a parsed tree into real nodes, parents before children. */
 function build(
   parsed: ParsedNode,
@@ -62,7 +68,18 @@ function build(
     },
     // `name` is spread only when the markup named it: an explicit undefined
     // would overwrite the type's default name with nothing.
-    { ...parsed.props, parent, ...(parsed.name ? { name: parsed.name } : {}) },
+    {
+      ...parsed.props,
+      parent,
+      // A layer called "Text" tells the user nothing. Naming it from its own
+      // words makes the layer list readable without anyone having to label
+      // anything, which is most of what an explicit rename would have done.
+      ...(parsed.name
+        ? { name: parsed.name }
+        : parsed.type === "text" && parsed.props.text
+          ? { name: layerNameFor(String(parsed.props.text)) }
+          : {}),
+    },
   );
   const childIds = parsed.children.map((c) => build(c, node.id, out));
   out.push({ node, children: childIds });
@@ -90,7 +107,12 @@ export function registerHtmlTool(): void {
       }
     }
 
-    const { nodes: parsed, ignored } = parseHtml(html);
+    // The width the markup will live in, so a stylesheet's percentages and
+    // flex resolve against the box they will actually occupy.
+    const container = targetId
+      ? activeFile().doc.nodes[targetId]?.width ?? 1440
+      : 1440;
+    const { nodes: parsed, ignored } = parseHtml(html, container);
     if (parsed.length === 0) throw new Error("no elements found in the html");
 
     const flat: Array<{ node: SceneNode; children: NodeId[] }> = [];

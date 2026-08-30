@@ -1,5 +1,5 @@
 import { activeFile, useDoc, type AlignEdge } from "../document/store";
-import { noteAgentWrite } from "./buildScope";
+import { endAgentBuild, noteAgentWrite } from "./buildScope";
 import type { NodeId, NodeType, SceneNode } from "../document/types";
 import { registerTool } from "./bridge";
 
@@ -313,6 +313,84 @@ export function registerWriteTools(): void {
     }
     if (!edge && !axis) throw new Error("pass edge, distribute, or both");
     return { ids, edge, distribute: axis };
+  });
+
+  /**
+   * A page to design on.
+   *
+   * Not the same thing as a frame. An artboard is a container for a document,
+   * so it lays its children out rather than leaving them to position
+   * themselves, it is placed clear of whatever is already on the page, and it
+   * comes at a real device size. Making the caller supply all of that every
+   * time is how boards end up overlapping at arbitrary sizes.
+   */
+  registerTool("create_artboard", (args) => {
+    const DEVICES: Record<string, { width: number; height: number }> = {
+      desktop: { width: 1440, height: 900 },
+      tablet: { width: 768, height: 1024 },
+      mobile: { width: 390, height: 844 },
+    };
+    const device = String(args.device ?? "desktop").toLowerCase();
+    const preset = DEVICES[device] ?? DEVICES.desktop;
+    const width = args.width === undefined ? preset.width : num(args.width, "width");
+    const height = args.height === undefined ? preset.height : num(args.height, "height");
+
+    // Placed to the right of everything already on the page, with a gap, so a
+    // new board never lands on top of existing work.
+    const f = activeFile();
+    const page = f.doc.pages[f.currentPageId];
+    const GAP = 80;
+    let x = 0;
+    let y = 0;
+    for (const id of page.children) {
+      const n = f.doc.nodes[id];
+      if (!n) continue;
+      x = Math.max(x, Math.round(n.x + n.width + GAP));
+      y = Math.min(y, Math.round(n.y));
+    }
+
+    const id = useDoc.getState().addNode(
+      "frame",
+      { x, y, width, height },
+      null,
+    );
+    useDoc.getState().updateNode(id, {
+      name: String(args.name ?? "Artboard"),
+      fill: args.background ? String(args.background) : "#FFFFFF",
+      // A document stacks its sections; it does not scatter them.
+      layout: "flow",
+    });
+    noteAgentWrite("create", [id]);
+    return { id, x, y, width, height, device };
+  });
+
+  registerTool("rename_nodes", (args) => {
+    const updates = Array.isArray(args.updates) ? args.updates : [];
+    if (updates.length === 0) throw new Error("updates is required");
+    const st = useDoc.getState();
+    const key = gestureKey("rename", updates.map((u) =>
+      String((u as Record<string, unknown>).nodeId ?? "")));
+    const done: string[] = [];
+    for (const raw of updates) {
+      const e = raw as Record<string, unknown>;
+      const id = String(e.nodeId ?? e.id ?? "");
+      requireNode(id);
+      // Long names make the layer list unreadable rather than more precise.
+      st.updateNode(id, { name: String(e.name ?? "").slice(0, 50) }, key);
+      done.push(id);
+    }
+    return { renamed: done };
+  });
+
+  /**
+   * Clear the "being worked on" marks.
+   *
+   * The build indicator says the agent is still in here. Left on, the user
+   * cannot tell a finished design from one that stopped halfway.
+   */
+  registerTool("finish_working", () => {
+    endAgentBuild();
+    return { ok: true };
   });
 
   registerTool("set_selection", (args) => {

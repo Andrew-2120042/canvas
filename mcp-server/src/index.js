@@ -43,8 +43,11 @@ function buildServer() {
     {
       title: "Get status",
       description:
-        "Whether the canvas app is connected and which document is open. " +
-        "Call this first if other tools report no app connection.",
+        "Orientation: the open file, its pages, every artboard on the current " +
+        "page with its position and size, the font families already in use, " +
+        "and the selection. Call this first — artboard width tells you whether " +
+        "you are designing for a phone or a desktop, and the font list is what " +
+        "a new section should match.",
       inputSchema: {},
     },
     async () => {
@@ -114,6 +117,73 @@ function buildServer() {
       },
     },
     async (args) => text(await bridge.call("get_node", args)),
+  );
+
+  server.registerTool(
+    "get_font_info",
+    {
+      title: "Get font info",
+      description:
+        "Whether a font family will actually render here, and what it offers " +
+        "— the weights that are genuinely distinct, whether it has a real " +
+        "italic, and the range of any variable width axis. Ask before setting " +
+        "type for the first time: a missing family does not error, it " +
+        "silently falls back to something else. A width axis is what lets a " +
+        "display heading be truly condensed rather than merely bold.",
+      inputSchema: {
+        families: z.array(z.string()).describe("Family names to check."),
+      },
+    },
+    async (args) => text(await bridge.call("get_font_info", args)),
+  );
+
+  server.registerTool(
+    "create_artboard",
+    {
+      title: "Create artboard",
+      description:
+        "A page to design on. Placed clear of existing boards, sized to a " +
+        "real device, and set to lay its children out in flow so sections " +
+        "stack the way a page does. Prefer this over create_node for a new " +
+        "screen. The height is a starting point: when content outgrows it, " +
+        "set sizeH to \"auto\" rather than guessing a taller number.",
+      inputSchema: {
+        name: z.string().optional(),
+        device: z.enum(["desktop", "tablet", "mobile"]).optional()
+          .describe("desktop 1440x900, tablet 768x1024, mobile 390x844. Default desktop."),
+        width: z.number().optional(),
+        height: z.number().optional(),
+        background: z.string().optional(),
+      },
+    },
+    async (args) => text(await bridge.call("create_artboard", args)),
+  );
+
+  server.registerTool(
+    "rename_nodes",
+    {
+      title: "Rename nodes",
+      description:
+        "Set the name shown in the layer tree. Text nodes are already named " +
+        "from their own content, so this is for the frames around them — a " +
+        "file full of layers called \"Frame\" is one nobody can navigate.",
+      inputSchema: {
+        updates: z.array(z.object({ nodeId: z.string(), name: z.string() })),
+      },
+    },
+    async (args) => text(await bridge.call("rename_nodes", args)),
+  );
+
+  server.registerTool(
+    "finish_working",
+    {
+      title: "Finish working",
+      description:
+        "Call when you are done. Clears the working indicator, so the user " +
+        "can tell a finished design from one that stopped halfway.",
+      inputSchema: {},
+    },
+    async (args) => text(await bridge.call("finish_working", args)),
   );
 
   server.registerTool(

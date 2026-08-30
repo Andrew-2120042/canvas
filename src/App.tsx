@@ -9,6 +9,7 @@ import { registerWriteTools } from "./mcp/writeTools";
 import { registerHtmlTool } from "./mcp/htmlTool";
 import { registerViewTools } from "./mcp/viewTool";
 import { registerReviewTools } from "./mcp/reviewTools";
+import { registerFontTools } from "./mcp/fontTools";
 
 // Tool implementations register once, before any connection can call them.
 registerReadTools();
@@ -17,6 +18,7 @@ registerWriteTools();
 registerHtmlTool();
 registerViewTools();
 registerReviewTools();
+registerFontTools();
 import { TabBar } from "./shell/TabBar";
 import { LeftPanel } from "./shell/LeftPanel";
 import { Toolbar } from "./shell/Toolbar";

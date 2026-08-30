@@ -14,17 +14,54 @@ import { activeFile, useDoc } from "../document/store";
 type Handler = (args: Record<string, unknown>) => unknown | Promise<unknown>;
 
 const handlers: Record<string, Handler> = {
+  /**
+   * Everything needed to decide what to do first.
+   *
+   * Counts are not orientation. What a design actually turns on is the size
+   * of the boards already there — a 390-wide artboard is a phone and a
+   * 1440-wide one is not — and which typefaces the document has committed
+   * to, so a new section matches the work beside it rather than introducing
+   * a fourth font.
+   */
   get_status: () => {
     const s = useDoc.getState();
     const f = activeFile();
+    const page = f.doc.pages[f.currentPageId];
+
+    const nodes = Object.values(f.doc.nodes);
+    const fonts = [...new Set(
+      nodes.map((n) => n.fontFamily).filter((x): x is string => !!x),
+    )].sort();
+
+    // Top-level frames are the boards being designed on.
+    const artboards = (page?.children ?? [])
+      .map((id) => f.doc.nodes[id])
+      .filter((n) => n && n.type === "frame")
+      .map((n) => ({
+        id: n.id,
+        name: n.name,
+        x: Math.round(n.x),
+        y: Math.round(n.y),
+        width: Math.round(n.width),
+        height: Math.round(n.height),
+        childCount: n.children.length,
+      }));
+
     return {
       appConnected: true,
-      openFiles: s.fileOrder.map((id) => s.files[id].name),
       activeFile: f.name,
-      currentPage: f.doc.pages[f.currentPageId]?.name ?? null,
-      pageCount: f.doc.pageOrder.length,
-      nodeCount: Object.keys(f.doc.nodes).length,
-      selectionCount: f.selection.length,
+      openFiles: s.fileOrder.map((id) => s.files[id].name),
+      currentPage: page?.name ?? null,
+      pages: f.doc.pageOrder.map((id) => ({
+        id, name: f.doc.pages[id].name, current: id === f.currentPageId,
+      })),
+      artboards,
+      // Families already in the document. Prefer these over introducing a new
+      // one, unless the brief calls for it.
+      fontFamilies: fonts,
+      pageBackground: page?.background ?? null,
+      nodeCount: nodes.length,
+      selection: f.selection,
     };
   },
 };

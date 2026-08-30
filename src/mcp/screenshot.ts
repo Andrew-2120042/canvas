@@ -200,6 +200,27 @@ function hidePhotosRule(photos: Photo[]): string {
   return `${selector}{background-image:none !important}`;
 }
 
+/**
+ * Take the entrance animation off a copy.
+ *
+ * A node the agent just made carries `is-arriving`, whose keyframes start at
+ * `opacity: 0` with `backwards` fill — so until the animation runs, the node
+ * is invisible. Nothing animates inside a rasterised SVG, so every node still
+ * mid-entrance rendered as nothing at all, and a capture taken right after a
+ * write came back blank. The capture wants the settled state, which is what
+ * the animation was on its way to.
+ */
+function settle(root: HTMLElement): void {
+  for (const el of [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))]) {
+    el.classList?.remove("is-arriving", "is-building");
+    if (el.style) {
+      el.style.animation = "none";
+      el.style.animationDelay = "";
+      el.style.opacity = el.style.opacity === "0" ? "" : el.style.opacity;
+    }
+  }
+}
+
 async function renderVectors(
   html: string, width: number, height: number, background: string, scale: number,
   extraCss = "",
@@ -261,6 +282,7 @@ export function registerScreenshotTool(): void {
       const clone = (el as HTMLElement).cloneNode(true) as HTMLElement;
       clone.style.left = "0px";
       clone.style.top = "0px";
+      settle(clone);
       photos = collectPhotos(f.doc, [nodeId]);
       // The capture places the node at PADDING with its own offset zeroed, so
       // world coordinates shift by exactly that.
@@ -289,7 +311,9 @@ export function registerScreenshotTool(): void {
       const layer = document.querySelector(".canvas-content");
       if (!layer) throw new Error("the canvas is not rendered");
       const copies = Array.from(layer.children).map((child) => {
-        return child.cloneNode(true) as HTMLElement;
+        const copy = child.cloneNode(true) as HTMLElement;
+        settle(copy);
+        return copy;
       });
       photos = collectPhotos(f.doc, page.children);
       originX = box.x;
