@@ -1,6 +1,6 @@
 import { activeFile, worldRect } from "../document/store";
-import { localRect } from "../document/geometry";
-import type { Doc, NodeId, SceneNode } from "../document/types";
+import { localRect, type Box } from "../document/geometry";
+import type { Doc, NodeId, SceneNode, SizeMode } from "../document/types";
 import { registerTool } from "./bridge";
 
 /**
@@ -103,12 +103,23 @@ function describe(doc: Doc, id: NodeId, includeStyle: boolean) {
   return base;
 }
 
-function subtree(doc: Doc, id: NodeId, detail: "summary" | "full"): unknown {
+/**
+ * A node and its descendants, to a depth.
+ *
+ * Depth is capped because it was not: a full read of a real page returned
+ * every node with every style, which is thousands of tokens for a question
+ * that is usually about the top of the tree. Anything deeper than the limit
+ * keeps its childIds, so a caller that genuinely needs further down can ask
+ * again from there rather than paying for the whole thing by default.
+ */
+function subtree(
+  doc: Doc, id: NodeId, detail: "summary" | "full", depth = 3,
+): unknown {
   const node = describe(doc, id, detail === "full") as Record<string, unknown> | null;
   if (!node) return null;
   const n = doc.nodes[id];
-  if (n.children.length) {
-    node.children = n.children.map((c) => subtree(doc, c, detail));
+  if (n.children.length && depth > 0) {
+    node.children = n.children.map((c) => subtree(doc, c, detail, depth - 1));
     delete node.childIds;
   }
   return node;
@@ -184,9 +195,166 @@ export function registerReadTools(): void {
     const f = activeFile();
     const node = describe(f.doc, id, true);
     if (!node) throw new Error(`no node with id "${id}"`);
-    if (args.includeChildren) return subtree(f.doc, id, "full");
+    if (args.includeChildren) {
+      const depth = args.depth === undefined ? 3 : Math.max(0, Math.min(10, Number(args.depth)));
+      return subtree(f.doc, id, "full", depth);
+    }
     return node;
   });
+
+  registerTool("get_layout", (args) => {
+    const f = activeFile();
+    const page = f.doc.pages[f.currentPageId];
+    const rootId = args.nodeId ? String(args.nodeId) : null;
+    if (rootId && !f.doc.nodes[rootId]) {
+      throw new Error(`no node with id "${rootId}"`);
+    }
+
+    // Boxes for the whole subtree cost more than the screenshot they were
+    // meant to replace — on a real page that is thousands of tokens to answer
+    // a yes/no question. The answer is `ok` and `issues`; the tree is there
+    // for when the numbers themselves are the question, and is off by default.
+    const depth = args.depth === undefined ? 0 : Math.max(0, Math.min(10, Number(args.depth)));
+
+    const issues: Issue[] = [];
+    const roots = rootId ? [rootId] : page.children;
+    const tree = roots
+      .map((id) => layoutTree(f.doc, id, null, issues, depth))
+      .filter((x): x is LayoutNode => !!x);
+
+    return {
+      page: page.name,
+      // True means everything in the subtree fits inside its box.
+      ok: issues.length === 0,
+      issues,
+      ...(depth > 0 ? { tree } : {}),
+    };
+  });
+}
+
+// --- layout health ------------------------------------------------------
+//
+// Most screenshots taken during a build are answering a yes/no question:
+// did this frame hug its content, is anything spilling out of its box, is a
+// caption cut off at a card edge. Those are questions about numbers, and a
+// screenshot is an expensive way to ask them — it costs tokens in proportion
+// to its pixel count, and the answer still has to be read out of pixels by
+// eye. This walks the subtree and reports the same facts as text.
+
+/** The element a node renders as right now, or null when it is off screen. */
+function domNode(id: NodeId): HTMLElement | null {
+  const layer = document.querySelector(".canvas-content");
+  return layer
+    ? layer.querySelector<HTMLElement>(`[data-node-id="${CSS.escape(id)}"]`)
+    : null;
+}
+
+/** Rect overlap, or null when the two do not meet. */
+function intersect(a: Box, b: Box): Box | null {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  if (right <= x || bottom <= y) return null;
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+/** The nearest ancestor that clips, and the box it confines things to. */
+type Clip = { rect: Box; owner: NodeId } | null;
+
+interface LayoutNode {
+  id: NodeId;
+  name: string;
+  type: string;
+  /** World box as [x, y, width, height], rounded. */
+  box: [number, number, number, number];
+  sizeW?: SizeMode;
+  sizeH?: SizeMode;
+  placement?: "absolute";
+  /** Content past the node's own box, [x, y] in px. */
+  overflow?: [number, number];
+  clipsContent?: true;
+  /** This node is cut off by an ancestor that clips. */
+  clippedBy?: { id: NodeId; right: number; bottom: number };
+  children?: LayoutNode[];
+}
+
+type Issue = Pick<LayoutNode, "id" | "name" | "overflow" | "clippedBy">;
+
+function layoutTree(
+  doc: Doc, id: NodeId, clip: Clip, issues: Issue[], depth: number,
+): LayoutNode | null {
+  const n = doc.nodes[id];
+  if (!n || !n.visible) return null;
+  const rect = worldRect(doc, id);
+  if (!rect) return null;
+
+  const node: LayoutNode = {
+    id: n.id,
+    name: n.name,
+    type: n.type,
+    box: [
+      Math.round(rect.x), Math.round(rect.y),
+      Math.round(rect.width), Math.round(rect.height),
+    ],
+  };
+  const sw = n.sizeW ?? "fixed";
+  const sh = n.sizeH ?? "fixed";
+  if (sw !== "fixed") node.sizeW = sw;
+  if (sh !== "fixed") node.sizeH = sh;
+  if (n.placement === "absolute") node.placement = "absolute";
+  if (n.clipContent) node.clipsContent = true;
+
+  // Content the box is too small to hold — the "switch this to fit-content"
+  // case. scrollSize against clientSize is the browser's own answer, and is
+  // trusted only on an axis pinned to a number: an axis left to size itself
+  // already grew to fit, so it can never report an overflow.
+  const el = domNode(id);
+  if (el) {
+    const ox = sw === "fixed" ? Math.max(0, el.scrollWidth - el.clientWidth) : 0;
+    const oy = sh === "fixed" ? Math.max(0, el.scrollHeight - el.clientHeight) : 0;
+    // A pixel of slack, to absorb rounding between the model and the layout.
+    if (ox > 1 || oy > 1) node.overflow = [Math.round(ox), Math.round(oy)];
+  }
+
+  if (clip) {
+    const right = Math.round(rect.x + rect.width - (clip.rect.x + clip.rect.width));
+    const bottom = Math.round(rect.y + rect.height - (clip.rect.y + clip.rect.height));
+    const overLeft = clip.rect.x - rect.x;
+    const overTop = clip.rect.y - rect.y;
+    if (right > 1 || bottom > 1 || overLeft > 1 || overTop > 1) {
+      node.clippedBy = {
+        id: clip.owner,
+        right: Math.max(0, right),
+        bottom: Math.max(0, bottom),
+      };
+    }
+  }
+
+  if (node.overflow || node.clippedBy) {
+    issues.push({
+      id: n.id, name: n.name,
+      overflow: node.overflow, clippedBy: node.clippedBy,
+    });
+  }
+
+  // A frame that clips narrows the box everything beneath it must stay in.
+  const next: Clip = n.clipContent
+    ? {
+        rect: clip
+          ? intersect(clip.rect, rect) ?? { ...rect, width: 0, height: 0 }
+          : rect,
+        owner: n.id,
+      }
+    : clip;
+
+  // The walk always continues, because an issue can be anywhere in the
+  // subtree; only the reported boxes stop at the requested depth.
+  const kids = n.children
+    .map((c) => layoutTree(doc, c, next, issues, depth - 1))
+    .filter((x): x is LayoutNode => !!x);
+  if (kids.length && depth > 0) node.children = kids;
+  return node;
 }
 
 /** Every node id on the current page, for validating agent-supplied ids. */

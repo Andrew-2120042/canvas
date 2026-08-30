@@ -4,7 +4,16 @@ import type { Doc, NodeId } from "../document/types";
 import { registerTool } from "./bridge";
 
 /** Cap so a huge frame cannot produce an unusable multi-megabyte image. */
-const MAX_SIDE = 1600;
+/**
+ * The long edge of a capture, in pixels.
+ *
+ * A screenshot costs tokens in proportion to its pixel count, and reviewing
+ * a layout — is it aligned, does it fit, is the rhythm right — does not need
+ * the detail that reading small text does. So the default is sized for the
+ * former, and the larger cap is available only when detail is asked for.
+ */
+const REVIEW_MAX_SIDE = 1024;
+const DETAIL_MAX_SIDE = 1600;
 const PADDING = 16;
 
 /**
@@ -300,7 +309,13 @@ export function registerScreenshotTool(): void {
     // 300px component costs four times a 1x one while showing nothing more.
     // Detail is available on request; it is no longer the default.
     const asked = args.scale === undefined ? 1 : Math.max(0.25, Math.min(2, Number(args.scale)));
-    const scale = Math.min(asked, MAX_SIDE / Math.max(box.width, box.height));
+    // Never larger than asked for, and never past the cap for that intent.
+    //
+    // This used to be `min(2, …)`, which silently doubled every capture small
+    // enough to allow it — four times the pixels, and four times the cost,
+    // for detail nobody had asked to see.
+    const cap = asked > 1 ? DETAIL_MAX_SIDE : REVIEW_MAX_SIDE;
+    const scale = Math.min(asked, cap / Math.max(box.width, box.height));
     const { canvas, ctx } = await renderVectors(
       html, box.width, box.height, page.background, Math.max(scale, 0.1),
       hidePhotosRule(photos),
@@ -308,11 +323,20 @@ export function registerScreenshotTool(): void {
     // Photographs go on last, at full resolution, over the vector layer.
     await drawPhotos(ctx, photos, originX, originY);
     const data = canvas.toDataURL("image/png").split(",")[1];
+    // The rendered size, not the logical one. Reporting the box while the
+    // raster was a different size hid what a capture actually cost, from the
+    // caller deciding whether to take another one and from anyone reading the
+    // transcript afterwards.
     return {
       mimeType: "image/png",
       base64: data,
-      width: Math.round(box.width),
-      height: Math.round(box.height),
+      width: canvas.width,
+      height: canvas.height,
+      /** What the capture covers in canvas units, whatever it was rendered at. */
+      region: {
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+      },
     };
   });
 }

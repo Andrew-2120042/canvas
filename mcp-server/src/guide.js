@@ -25,8 +25,9 @@ How to work here:
 2. Build one visual group per write_html call — a header, a card, a list. Not a whole screen in one shot. The user is watching it appear.
 3. Look at what you made. get_screenshot after each group and check it actually rendered as intended: nothing clipped, nothing overlapping, columns lining up between rows. Fix it before moving on.
 4. Read ignoredCss in every write_html result. Anything listed there did not take effect.
-5. move_nodes to restructure and set_text_content to retext — both keep node ids, so rewriting HTML for either is wasted work.
-6. focus_node to show the user what you are talking about.
+5. get_layout before get_screenshot. "Did the frame hug its content, is anything clipped, do the columns line up" are questions about numbers, and get_layout answers them as text for a fraction of what an image costs. Screenshot when the question is genuinely how something looks.
+6. move_nodes to restructure and set_text_content to retext — both keep node ids, so rewriting HTML for either is wasted work.
+7. focus_node to show the user what you are talking about.
 
 Two mechanical rules that cause most misalignment here:
 - In a row of repeated items, give icons and trailing controls a fixed width with flex-shrink:0, and let the text column take the rest with flex:1 and min-width:0. Gap alone does not align columns across rows.

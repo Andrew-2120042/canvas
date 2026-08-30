@@ -143,11 +143,7 @@ export function layoutCss(
   const w = node.sizeW ?? "fixed";
   const h = node.sizeH ?? "fixed";
 
-  // A grid track decides the child's width; declaring one would override it.
-  const sizedByParent = parent.mode === "flow" && (node.placement ?? "flow") === "flow";
-  if (sizedByParent && node.css?.width === undefined) {
-    // leave width to the layout
-  } else if (w === "auto") css.width = "auto";
+  if (w === "auto") css.width = "auto";
   else if (w === "fill") {
     if (!flowing) css.width = "100%";
     else if (column) { css.alignSelf = "stretch"; css.width = "auto"; }

@@ -108,10 +108,35 @@ function buildServer() {
       inputSchema: {
         id: z.string().describe("The node id."),
         includeChildren: z.boolean().optional()
-          .describe("Return the whole subtree rather than just this node."),
+          .describe("Return the subtree rather than just this node."),
+        depth: z.number().optional()
+          .describe("How deep includeChildren goes. Default 3, max 10. Nodes at the limit keep their childIds so you can read on from there."),
       },
     },
     async (args) => text(await bridge.call("get_node", args)),
+  );
+
+  server.registerTool(
+    "get_layout",
+    {
+      title: "Get layout",
+      description:
+        "Layout health for a subtree, as text. Every node's world box and " +
+        "size mode, plus a flat `issues` list of anything whose content " +
+        "overflows its frame or is clipped by an ancestor. This answers " +
+        "\"does it fit, is it hugging, is anything cut off\" for the cost of " +
+        "a short reply rather than an image — check it first, and take a " +
+        "screenshot only when the question is genuinely how something looks. " +
+        "`ok: true` means the subtree fits. Pass nodeId for one section; " +
+        "omit for the whole page.",
+      inputSchema: {
+        nodeId: z.string().optional()
+          .describe("Subtree to inspect; omit for the whole page."),
+        depth: z.number().optional()
+          .describe("How many levels of boxes to include. Default 0 — just the verdict and any issues, which is what you usually want. Issues are found at any depth regardless."),
+      },
+    },
+    async (args) => text(await bridge.call("get_layout", args)),
   );
 
   server.registerTool(
