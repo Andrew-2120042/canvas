@@ -1,15 +1,34 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import { useActive, useDoc } from "../document/store";
 import { useActivity } from "../state/activity";
-import { nodeCss, rgba } from "../document/style";
+import { childLayoutOf, gradientCss, layoutCss, nodeCss, rgba, type ParentLayout } from "../document/style";
 import { PathView } from "./PathView";
+import { imageSrc } from "./assetSrc";
 import type { NodeId } from "../document/types";
+
+/** A node whose parent does no layout places itself by x/y. */
+const ABSOLUTE: ParentLayout = { mode: "absolute" };
+
 
 /**
  * Renders one node as a real DOM element, with its children as real DOM
  * children — the layer tree in 1.5 is a view over exactly this structure.
+ *
+ * Memoised, and that matters more than it looks. Panning and zooming change
+ * the viewport, which re-renders the canvas region — and without this every
+ * node in the document would re-render on every wheel tick, whether or not
+ * anything about it had changed. Each node already subscribes to its own slice
+ * of the document, so it re-renders exactly when it is the thing that changed.
  */
-export function SceneNodeView({ id }: { id: NodeId }) {
+function SceneNodeViewInner({
+  id,
+  parentLayout = ABSOLUTE,
+}: {
+  id: NodeId;
+  /** How the parent arranges children, which decides whether this node
+   *  positions itself or flows. */
+  parentLayout?: ParentLayout;
+}) {
   const node = useActive((f) => f.doc.nodes[id]);
   const arrivalAt = useActivity((a) => a.arrivals[id]);
   const beingBuilt = useActivity((a) => a.building && a.touched.includes(id));
@@ -44,6 +63,12 @@ export function SceneNodeView({ id }: { id: NodeId }) {
     };
   }, [editing, id]);
 
+  // Identity has to be stable, or every child's memo would miss on each render.
+  const childLayout = useMemo<ParentLayout>(
+    () => (node ? childLayoutOf(node) : ABSOLUTE),
+    [node],
+  );
+
   if (!node || !node.visible) return null;
 
   // A node the agent has just made plays a short entrance, delayed so that a
@@ -51,8 +76,8 @@ export function SceneNodeView({ id }: { id: NodeId }) {
   const delay = arrivalAt !== undefined ? Math.max(0, arrivalAt - Date.now()) : null;
 
   const isText = node.type === "text";
-  const isImage = node.type === "image";
   const isPath = node.type === "path";
+  const isSvg = node.type === "svg";
 
   /** Leave edit mode; the effect cleanup performs the actual write. */
   const endEditing = () => useDoc.getState().setEditing(null);
@@ -68,19 +93,23 @@ export function SceneNodeView({ id }: { id: NodeId }) {
       style={{
         ...(delay !== null ? { animationDelay: `${delay}ms` } : {}),
         ...nodeCss(node),
-        left: node.x,
-        top: node.y,
-        width: node.width,
-        height: isText ? undefined : node.height,
-        minHeight: isText ? node.height : undefined,
-        background: isText || isPath
+        ...layoutCss(node, parentLayout),
+        // Text sizes to its content unless it was given a fixed box.
+        ...(isText && (node.sizeH ?? "fixed") === "fixed"
+          ? { height: undefined, minHeight: node.height }
+          : {}),
+        // A picture wins over a flat fill, on any node type — a frame with a
+        // photograph behind its children is the ordinary way a hero is built.
+        background: isText || isPath || isSvg
           ? "transparent"
-          : isImage && node.src
-            ? `url(${node.src}) center/cover no-repeat`
-            : rgba(node.fill, 1),
+          : node.src
+            ? `url("${imageSrc(node.src)}") ${node.backgroundPosition ?? "center"}/` +
+              `${node.backgroundFit ?? "cover"} no-repeat`
+            : node.gradient
+              ? gradientCss(node.gradient)
+              : rgba(node.fill, 1),
         color: isText ? node.fill : undefined,
         opacity: node.opacity,
-        borderRadius: node.radius || undefined,
         overflow: node.clipContent ? "hidden" : undefined,
       }}
     >
@@ -96,6 +125,14 @@ export function SceneNodeView({ id }: { id: NodeId }) {
         />
       )}
       {isPath && <PathView node={node} />}
+
+      {/* SVG is already vector; render the markup rather than re-modelling it. */}
+      {isSvg && node.svg && (
+        <div
+          className="node-svg"
+          dangerouslySetInnerHTML={{ __html: node.svg }}
+        />
+      )}
 
       {isText &&
         (editing ? (
@@ -122,8 +159,10 @@ export function SceneNodeView({ id }: { id: NodeId }) {
         ))}
 
       {node.children.map((childId: string) => (
-        <SceneNodeView key={childId} id={childId} />
+        <SceneNodeView key={childId} id={childId} parentLayout={childLayout} />
       ))}
     </div>
   );
 }
+
+export const SceneNodeView = memo(SceneNodeViewInner);

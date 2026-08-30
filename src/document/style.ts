@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { SceneNode } from "./types";
+import type { FlexLayout, Gradient, SceneNode } from "./types";
 
 /** Style groups on a node. All plain JSON — see the model note in types.ts. */
 
@@ -63,6 +63,153 @@ export interface GuideStyle extends Paint {
 
 // --- CSS mapping ----------------------------------------------------------
 
+/** A gradient as the CSS it renders with. */
+export function gradientCss(g: Gradient): string {
+  const stops = g.stops
+    .slice()
+    .sort((a, b) => a.at - b.at)
+    .map((s) => `${s.color} ${Math.round(s.at * 100)}%`)
+    .join(", ");
+  return g.kind === "radial"
+    ? `radial-gradient(circle, ${stops})`
+    : `linear-gradient(${g.angle ?? 180}deg, ${stops})`;
+}
+
+/** How a node's parent arranges it, which decides how the node sizes itself. */
+export interface ParentLayout {
+  /**
+   * How this parent places its children.
+   *
+   * "flow" covers every CSS layout that positions children itself — flex,
+   * grid, block. The distinction that matters to a child is only whether
+   * something else is deciding where it goes, not which algorithm is doing
+   * the deciding.
+   */
+  mode: "absolute" | "flex" | "flow";
+  /** The parent's main axis, when it is a flex container. */
+  direction?: FlexLayout["direction"];
+}
+
+/** CSS display values that lay their children out, rather than leaving them
+ *  to position themselves. */
+const FLOW_DISPLAYS = new Set([
+  "grid", "inline-grid", "block", "inline-block", "inline-flex", "flow-root",
+]);
+
+/** How a node arranges its children, including layouts held as raw CSS. */
+export function childLayoutOf(node: SceneNode): ParentLayout {
+  if (node.layout === "flex" && node.flex) {
+    return { mode: "flex", direction: node.flex.direction };
+  }
+  if (node.layout === "flow") return { mode: "flow" };
+  const display = node.css?.display?.trim();
+  if (display && FLOW_DISPLAYS.has(display)) return { mode: "flow" };
+  if (display === "flex") return { mode: "flex" };
+  return { mode: "absolute" };
+}
+
+/**
+ * Layout properties as CSS.
+ *
+ * Nothing is computed here. The canvas is real DOM, so declaring a node a flex
+ * container is enough — the browser lays it out. The only work is deciding
+ * whether a node positions itself absolutely or flows, which depends on its
+ * parent's layout mode.
+ */
+export function layoutCss(
+  node: SceneNode,
+  parent: ParentLayout,
+): CSSProperties {
+  const css: CSSProperties = {};
+
+  // A flex parent lays out its children; anything else places them by x/y.
+  const flowing = parent.mode !== "absolute" && (node.placement ?? "flow") === "flow";
+  const column = parent.direction?.startsWith("column") ?? false;
+
+  if (flowing) {
+    css.position = "relative";
+    if (node.grow !== undefined) css.flexGrow = node.grow;
+    if (node.shrink === false) css.flexShrink = 0;
+    if (node.alignSelf) css.alignSelf = alignValue(node.alignSelf);
+  } else {
+    css.position = "absolute";
+    css.left = node.x;
+    css.top = node.y;
+  }
+
+  // "auto" lets content decide; "fill" takes the whole of the parent on that
+  // axis. Which CSS says that depends on the axis: along the parent's main
+  // axis it is a grow, across it a stretch, and outside flex it is just 100%.
+  const w = node.sizeW ?? "fixed";
+  const h = node.sizeH ?? "fixed";
+
+  // A grid track decides the child's width; declaring one would override it.
+  const sizedByParent = parent.mode === "flow" && (node.placement ?? "flow") === "flow";
+  if (sizedByParent && node.css?.width === undefined) {
+    // leave width to the layout
+  } else if (w === "auto") css.width = "auto";
+  else if (w === "fill") {
+    if (!flowing) css.width = "100%";
+    else if (column) { css.alignSelf = "stretch"; css.width = "auto"; }
+    else { css.flexGrow = css.flexGrow ?? 1; css.flexBasis = 0; css.width = "auto"; }
+  } else css.width = node.width;
+
+  if (h === "auto") css.height = "auto";
+  else if (h === "fill") {
+    if (!flowing) css.height = "100%";
+    else if (column) { css.flexGrow = css.flexGrow ?? 1; css.flexBasis = 0; css.height = "auto"; }
+    else { css.alignSelf = "stretch"; css.height = "auto"; }
+  } else css.height = node.height;
+
+  if (node.layout === "flow" && !node.css?.display) css.display = "block";
+
+  if (node.layout === "flex" && node.flex) {
+    css.display = "flex";
+    css.flexDirection = node.flex.direction;
+    css.gap = node.flex.columnGap !== undefined
+      ? `${node.flex.gap}px ${node.flex.columnGap}px`
+      : node.flex.gap;
+    if (node.flex.wrap) css.flexWrap = node.flex.wrap === "reverse" ? "wrap-reverse" : "wrap";
+    if (node.flex.justify) css.justifyContent = justifyValue(node.flex.justify);
+    if (node.flex.align) css.alignItems = alignValue(node.flex.align);
+  }
+
+  if (node.minWidth !== undefined) css.minWidth = node.minWidth;
+  if (node.minHeight !== undefined) css.minHeight = node.minHeight;
+
+  // A number is pixels; a string is already a CSS length.
+  const spacing = (v: number | string) => (typeof v === "number" ? `${v}px` : v);
+  if (node.padding) {
+    const p = node.padding;
+    css.padding = `${spacing(p.top)} ${spacing(p.right)} ${spacing(p.bottom)} ${spacing(p.left)}`;
+  }
+  if (node.margin) {
+    const m = node.margin;
+    css.margin = `${spacing(m.top)} ${spacing(m.right)} ${spacing(m.bottom)} ${spacing(m.left)}`;
+  }
+
+  // A transform written as CSS wins; `rotate` is the panel's own field.
+  if (node.transform) css.transform = node.transform;
+  else if (node.rotate) css.transform = `rotate(${node.rotate}deg)`;
+
+  if (node.radii) {
+    const [a, b, c, d] = node.radii;
+    css.borderRadius = `${a}px ${b}px ${c}px ${d}px`;
+  } else if (node.radius) {
+    css.borderRadius = node.radius;
+  }
+
+  return css;
+}
+
+/** CSS spells these differently from the model's plainer words. */
+function alignValue(v: string): string {
+  return v === "start" ? "flex-start" : v === "end" ? "flex-end" : v;
+}
+function justifyValue(v: string): string {
+  return v === "start" ? "flex-start" : v === "end" ? "flex-end" : v;
+}
+
 /** Leading used when a node does not set its own. */
 export const AUTO_LINE_HEIGHT = 1.3;
 
@@ -112,9 +259,22 @@ const FILTER_CSS: Record<FilterFn, (n: number) => string> = {
  * than a private effect model — the whole point of the real-DOM bet is that
  * what the panel edits is what the browser renders.
  */
+/** `background-color` -> `backgroundColor`, as the DOM expects. */
+function camel(prop: string): string {
+  return prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
 export function nodeCss(node: SceneNode): CSSProperties {
   const isText = node.type === "text";
   const css: CSSProperties = {};
+
+  // Passthrough first, so a first-class field still wins where both exist —
+  // the panel must stay the authority over what it edits.
+  if (node.css) {
+    for (const [prop, value] of Object.entries(node.css)) {
+      (css as Record<string, string>)[camel(prop)] = value;
+    }
+  }
 
   if (node.outline?.visible) {
     css.outline = `${node.outline.width}px solid ${rgba(node.outline.color, node.outline.opacity)}`;
@@ -156,7 +316,8 @@ export function nodeCss(node: SceneNode): CSSProperties {
     css.lineHeight = `${resolvedLineHeight(node)}px`;
     if (node.letterSpacing) css.letterSpacing = `${node.letterSpacing}em`;
     if (node.textAlign) css.textAlign = node.textAlign;
-    css.whiteSpace = node.preWrap === false ? "normal" : "pre-wrap";
+    css.whiteSpace = node.whiteSpace
+      ?? (node.preWrap === false ? "normal" : "pre-wrap");
 
     if (node.underline?.visible) {
       css.textDecorationLine = "underline";

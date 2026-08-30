@@ -5,6 +5,7 @@ import {
   type PathPoint, type SceneNode,
 } from "./types";
 import { normalise, pathBounds } from "../canvas/pathGeometry";
+import { isLaidOut, localRect, measureAll, measureWorld } from "./geometry";
 
 export interface Rect {
   x: number;
@@ -81,6 +82,8 @@ interface DocStore {
   // nodes
   addNode: (type: NodeType, rect: Rect, parent?: NodeId | null, key?: string) => NodeId;
   setNodeRect: (id: NodeId, rect: Partial<Rect>, key?: string) => void;
+  /** Shift nodes by a world delta, detaching any the browser positioned. */
+  moveBy: (ids: NodeId[], dx: number, dy: number, key?: string) => void;
   updateNode: (id: NodeId, patch: Partial<SceneNode>, key?: string) => void;
   removeNodes: (ids: NodeId[]) => void;
 
@@ -93,11 +96,33 @@ interface DocStore {
   removeComment: (id: string) => void;
 
   // structure
-  duplicateNodes: (ids: NodeId[], offset?: number) => NodeId[];
+  /** Returns the new roots, plus a source-id -> copy-id map for every
+   *  descendant, so a caller can target a cloned child without re-reading
+   *  the tree it just made. */
+  duplicateNodes: (
+    ids: NodeId[], offset?: number,
+  ) => { made: NodeId[]; map: Record<NodeId, NodeId> };
+  /**
+   * Reparent and reorder existing nodes, keeping their ids.
+   *
+   * Structure changes without new ids, so anything already holding a
+   * reference — a selection, an agent mid-build — stays valid. Rewriting the
+   * markup to achieve the same thing would invalidate all of them.
+   */
+  moveNodes: (
+    moves: Array<{ id: NodeId; parent?: NodeId | null; index?: number }>,
+  ) => Array<{ parent: NodeId | null; children: NodeId[] }>;
   reorder: (ids: NodeId[], where: "front" | "back" | "forward" | "backward") => void;
   align: (ids: NodeId[], edge: AlignEdge) => void;
   distribute: (ids: NodeId[], axis: "h" | "v") => void;
   insertNodes: (nodes: SceneNode[], parent: NodeId | null) => NodeId[];
+  /** Insert a whole parsed tree under a parent, in one step. */
+  insertTree: (
+    trees: Array<{ node: SceneNode; children: NodeId[] }>,
+    roots: NodeId[],
+    parent: NodeId | null,
+    mode: "insert-children" | "replace-children",
+  ) => void;
 
   /**
    * Group everything until `endBuild` into a single undo step.
@@ -317,6 +342,22 @@ export const useDoc = create<DocStore>((set, get) => {
         return f;
       }, { key }),
 
+    moveBy: (ids, dx, dy, key) =>
+      edit((f) => {
+        const nodes = { ...f.doc.nodes };
+        let touched = false;
+        for (const id of ids) {
+          const cur = nodes[id];
+          if (!cur || cur.locked) continue;
+          const n = pinned(f.doc, cur);
+          nodes[id] = { ...n, x: n.x + dx, y: n.y + dy };
+          touched = true;
+        }
+        if (!touched) return f;
+        f.doc = { ...f.doc, nodes };
+        return f;
+      }, { key }),
+
     updateNode: (id, patch, key) =>
       edit((f) => {
         const n = f.doc.nodes[id];
@@ -456,8 +497,105 @@ export const useDoc = create<DocStore>((set, get) => {
       return ids;
     },
 
+    insertTree: (trees, roots, parent, mode) =>
+      edit((f) => {
+        const nodes = { ...f.doc.nodes };
+        const pages = { ...f.doc.pages };
+
+        // Replacing means the old children go, along with their descendants.
+        if (mode === "replace-children" && parent && nodes[parent]) {
+          const doomed = new Set<NodeId>();
+          const walk = (id: NodeId) => {
+            if (doomed.has(id)) return;
+            doomed.add(id);
+            nodes[id]?.children.forEach(walk);
+          };
+          nodes[parent].children.forEach(walk);
+          for (const id of doomed) delete nodes[id];
+          nodes[parent] = { ...nodes[parent], children: [] };
+        }
+
+        for (const { node, children } of trees) {
+          nodes[node.id] = { ...node, children };
+        }
+
+        if (parent && nodes[parent]) {
+          const p = nodes[parent];
+          nodes[parent] = {
+            ...p,
+            children: mode === "replace-children" ? roots : [...p.children, ...roots],
+          };
+        } else {
+          const page = pages[f.currentPageId];
+          pages[f.currentPageId] = { ...page, children: [...page.children, ...roots] };
+        }
+
+        f.doc = { ...f.doc, nodes, pages };
+        f.selection = roots;
+        return f;
+      }),
+
+    moveNodes: (moves) => {
+      let touched: Array<{ parent: NodeId | null; children: NodeId[] }> = [];
+      edit((f) => {
+        const nodes = { ...f.doc.nodes };
+        const pages = { ...f.doc.pages };
+        const pageId = f.currentPageId;
+        const affected = new Set<NodeId | null>();
+
+        /** A node cannot be moved inside itself or anything it contains. */
+        const contains = (ancestor: NodeId, id: NodeId): boolean => {
+          let cur: NodeId | null = id;
+          while (cur) {
+            if (cur === ancestor) return true;
+            cur = nodes[cur]?.parent ?? null;
+          }
+          return false;
+        };
+
+        const childrenOf = (p: NodeId | null): NodeId[] =>
+          p ? (nodes[p]?.children ?? []) : pages[pageId].children;
+
+        const setChildren = (p: NodeId | null, list: NodeId[]) => {
+          if (p) nodes[p] = { ...nodes[p], children: list };
+          else pages[pageId] = { ...pages[pageId], children: list };
+          affected.add(p);
+        };
+
+        // Applied in order, each move seeing the result of the one before it.
+        for (const mv of moves) {
+          const node = nodes[mv.id];
+          if (!node) continue;
+          const from = node.parent;
+          const to = mv.parent === undefined ? from : mv.parent;
+          if (to && (!nodes[to] || contains(mv.id, to))) continue;
+          if (to && nodes[to].type !== "frame") continue;
+
+          setChildren(from, childrenOf(from).filter((c) => c !== mv.id));
+
+          const list = childrenOf(to).filter((c) => c !== mv.id);
+          const at = mv.index === undefined
+            ? list.length
+            : Math.max(0, Math.min(list.length, mv.index));
+          list.splice(at, 0, mv.id);
+          setChildren(to, list);
+
+          if (to !== from) nodes[mv.id] = { ...nodes[mv.id], parent: to };
+        }
+
+        f.doc = { ...f.doc, nodes, pages };
+        touched = [...affected].map((p) => ({
+          parent: p,
+          children: p ? (nodes[p]?.children ?? []) : pages[pageId].children,
+        }));
+        return f;
+      });
+      return touched;
+    },
+
     duplicateNodes: (ids, offset = 10) => {
       const made: NodeId[] = [];
+      const map: Record<NodeId, NodeId> = {};
       edit((f) => {
         const nodes = { ...f.doc.nodes };
         const pages = { ...f.doc.pages };
@@ -471,6 +609,7 @@ export const useDoc = create<DocStore>((set, get) => {
             .map((c) => cloneTree(c, copyId))
             .filter((c): c is NodeId => !!c);
           nodes[copyId] = { ...structuredClone(src), id: copyId, parent, children: kids };
+          map[id] = copyId;
           return copyId;
         };
 
@@ -494,7 +633,7 @@ export const useDoc = create<DocStore>((set, get) => {
         f.selection = made;
         return f;
       });
-      return made;
+      return { made, map };
     },
 
     reorder: (ids, where) =>
@@ -547,7 +686,7 @@ export const useDoc = create<DocStore>((set, get) => {
 
         const nodes = { ...f.doc.nodes };
         for (const { id, r } of rects) {
-          const n = nodes[id];
+          const n = pinned(f.doc, nodes[id]);
           let dx = 0;
           let dy = 0;
           if (edge === "left") dx = minX - r.x;
@@ -583,7 +722,7 @@ export const useDoc = create<DocStore>((set, get) => {
         const nodes = { ...f.doc.nodes };
         let cursor = axis === "h" ? rects[0].r.x : rects[0].r.y;
         for (const { id, r } of rects) {
-          const n = nodes[id];
+          const n = pinned(f.doc, nodes[id]);
           if (axis === "h") {
             nodes[id] = { ...n, x: n.x + (cursor - r.x) };
             cursor += r.width + gap;
@@ -669,9 +808,41 @@ export function activeFile(): FileState {
 }
 
 /** Absolute world position of a node, walking up through its ancestors. */
+
+/**
+ * The same node, with a position the model actually owns.
+ *
+ * Moving a node the browser laid out is the absolute-position override: it
+ * leaves the flow at exactly the place it already occupied, so the move
+ * starts from where the user sees it rather than from a stored zero. Every
+ * way of moving a node — dragging, nudging, aligning, distributing, typing a
+ * coordinate — goes through this, so none of them can quietly do nothing.
+ */
+function pinned(doc: Doc, node: SceneNode): SceneNode {
+  if (!isLaidOut(doc, node.id)) return node;
+  const local = localRect(doc, node.id);
+  if (!local) return node;
+  return {
+    ...node,
+    placement: "absolute",
+    x: local.x,
+    y: local.y,
+    width: local.width,
+    height: local.height,
+  };
+}
+
 export function worldRect(doc: Doc, id: NodeId): Rect | null {
   const n = doc.nodes[id];
   if (!n) return null;
+
+  // A node inside a laid-out subtree has no position of its own to sum: the
+  // browser placed it, so the browser is asked. See geometry.ts.
+  if (isLaidOut(doc, id)) {
+    const measured = measureWorld(id);
+    if (measured) return measured;
+  }
+
   let x = n.x;
   let y = n.y;
   let p = n.parent;
@@ -699,9 +870,16 @@ export function frameAt(
     if (exclude.has(id)) continue;
     const n = doc.nodes[id];
     if (!n || !n.visible || n.type !== "frame") continue;
-    const ax = ox + n.x;
-    const ay = oy + n.y;
-    if (px < ax || py < ay || px > ax + n.width || py > ay + n.height) continue;
+    // Same reasoning as worldRect: a frame its parent laid out is not where
+    // its stored offset says, so dropping a new node into it would miss.
+    const real = isLaidOut(doc, id)
+      ? measureWorld(id)
+      : null;
+    const ax = real ? real.x : ox + n.x;
+    const ay = real ? real.y : oy + n.y;
+    const aw = real ? real.width : n.width;
+    const ah = real ? real.height : n.height;
+    if (px < ax || py < ay || px > ax + aw || py > ay + ah) continue;
     return frameAt(doc, n.children, px, py, ax, ay, exclude) ?? id;
   }
   return null;
@@ -709,6 +887,11 @@ export function frameAt(
 
 /** Absolute world origin of a node, including its own offset. */
 export function parentOrigin(doc: Doc, id: NodeId | null): { x: number; y: number } {
+  if (id && isLaidOut(doc, id)) {
+    const measured = measureWorld(id);
+    if (measured) return { x: measured.x, y: measured.y };
+  }
+
   let x = 0;
   let y = 0;
   let cur = id;
@@ -732,14 +915,29 @@ export interface PlacedNode extends Rect {
 export function collectWorldRects(
   doc: Doc, ids: NodeId[], ox = 0, oy = 0, out: PlacedNode[] = [],
 ): PlacedNode[] {
-  for (const id of ids) {
-    const n = doc.nodes[id];
-    if (!n) continue;
-    const x = ox + n.x;
-    const y = oy + n.y;
-    out.push({ id, x, y, width: n.width, height: n.height, locked: n.locked, visible: n.visible });
-    if (n.children.length) collectWorldRects(doc, n.children, x, y, out);
-  }
+  // The page is measured once, here, rather than per node: every rect then
+  // comes from the same layout, and a marquee testing the whole page does
+  // not force a fresh layout read for each node it checks.
+  const rects = measureAll();
+
+  const walk = (list: NodeId[], px: number, py: number): void => {
+    for (const id of list) {
+      const n = doc.nodes[id];
+      if (!n) continue;
+      const real = rects.get(id);
+      const x = real ? real.x : px + n.x;
+      const y = real ? real.y : py + n.y;
+      out.push({
+        id, x, y,
+        width: real ? real.width : n.width,
+        height: real ? real.height : n.height,
+        locked: n.locked, visible: n.visible,
+      });
+      if (n.children.length) walk(n.children, x, y);
+    }
+  };
+
+  walk(ids, ox, oy);
   return out;
 }
 
