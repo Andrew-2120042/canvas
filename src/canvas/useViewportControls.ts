@@ -1,13 +1,25 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { activeFile } from "../document/store";
 import { useTool } from "../state/tools";
-import { useViewport } from "../state/viewport";
+import { MAX_ZOOM, MIN_ZOOM, useViewport } from "../state/viewport";
 
 const ARROW_STEP = 40;
 const ARROW_STEP_LARGE = 200;
-const ZOOM_KEY_FACTOR = 1.2;
+const ZOOM_KEY_FACTOR = 1.25;
 /** Trackpad pinch arrives as a ctrl-wheel; damp it so a pinch isn't a leap. */
-const WHEEL_ZOOM_DAMPING = 0.01;
+const WHEEL_ZOOM_DAMPING = 0.0135;
+/**
+ * How much of the remaining distance to the target zoom is covered each frame.
+ *
+ * Wheel and pinch events arrive unevenly — a few large deltas, then a burst of
+ * small ones — and applying each one the instant it lands makes the canvas
+ * lurch in time with the hardware rather than with the gesture. Easing toward
+ * a target instead decouples what is drawn from when events happen. Low enough
+ * to smooth the steps, high enough that it still stops when the fingers do.
+ */
+const ZOOM_EASE = 0.4;
+/** Below this the remaining distance is not worth another frame. */
+const ZOOM_EPSILON = 0.002;
 
 function isTypingTarget(t: EventTarget | null) {
   const el = t as HTMLElement | null;
@@ -40,6 +52,13 @@ export function useViewportControls(ref: RefObject<HTMLElement | null>) {
     const el = ref.current;
     if (!el) return;
 
+    // Where the zoom gesture is heading, and the screen point it pivots on.
+    // null means no gesture is in flight.
+    let zoomTarget: number | null = null;
+    let zoomAnchor = { x: 0, y: 0 };
+    let zoomFrame = 0;
+    const clamp = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+
     const centre = () => {
       const r = el.getBoundingClientRect();
       return { x: r.width / 2, y: r.height / 2 };
@@ -49,14 +68,45 @@ export function useViewportControls(ref: RefObject<HTMLElement | null>) {
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
 
+    /**
+     * Ease the viewport toward the zoom the gesture has asked for.
+     *
+     * Interpolating in log space keeps the motion even: a step from 2x to 4x
+     * covers the same visual distance as one from 8x to 16x, which is how
+     * zooming is actually perceived.
+     */
+    const stepZoom = () => {
+      zoomFrame = 0;
+      const target = zoomTarget;
+      if (target === null) return;
+
+      const vp = useViewport.getState();
+      const remaining = Math.log(target / vp.zoom);
+      if (Math.abs(remaining) < ZOOM_EPSILON) {
+        vp.zoomAt(target / vp.zoom, zoomAnchor.x, zoomAnchor.y);
+        zoomTarget = null;
+        return;
+      }
+      vp.zoomAt(Math.exp(remaining * ZOOM_EASE), zoomAnchor.x, zoomAnchor.y);
+      zoomFrame = requestAnimationFrame(stepZoom);
+    };
+
+    /** Aim the easing at a zoom, pivoting on a screen point. */
+    const easeZoomTo = (z: number, anchor: { x: number; y: number }) => {
+      zoomTarget = clamp(z);
+      zoomAnchor = anchor;
+      if (!zoomFrame) zoomFrame = requestAnimationFrame(stepZoom);
+    };
+
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const p = local(e);
       if (e.ctrlKey || e.metaKey) {
-        // Pinch, or an explicit zoom gesture.
-        useViewport
-          .getState()
-          .zoomAt(Math.exp(-e.deltaY * WHEEL_ZOOM_DAMPING), p.x, p.y);
+        // Pinch, or an explicit zoom gesture. Accumulated onto the target
+        // rather than the current zoom, so a fast gesture is not throttled by
+        // how far the easing has got.
+        const from = zoomTarget ?? useViewport.getState().zoom;
+        easeZoomTo(from * Math.exp(-e.deltaY * WHEEL_ZOOM_DAMPING), p);
       } else {
         useViewport.getState().panBy(-e.deltaX, -e.deltaY);
       }
@@ -85,12 +135,14 @@ export function useViewportControls(ref: RefObject<HTMLElement | null>) {
 
       if (e.metaKey || e.ctrlKey) {
         const c = centre();
+        // Through the same easing as the wheel, so held-down +/- glides
+        // instead of stepping, and repeats accumulate onto one target.
         if (e.key === "=" || e.key === "+") {
-          vp.zoomAt(ZOOM_KEY_FACTOR, c.x, c.y); e.preventDefault();
+          easeZoomTo((zoomTarget ?? vp.zoom) * ZOOM_KEY_FACTOR, c); e.preventDefault();
         } else if (e.key === "-" || e.key === "_") {
-          vp.zoomAt(1 / ZOOM_KEY_FACTOR, c.x, c.y); e.preventDefault();
+          easeZoomTo((zoomTarget ?? vp.zoom) / ZOOM_KEY_FACTOR, c); e.preventDefault();
         } else if (e.key === "0") {
-          vp.zoomTo(1, c.x, c.y); e.preventDefault();
+          easeZoomTo(1, c); e.preventDefault();
         }
       } else if (e.shiftKey && e.key === "!") {
         // Shift+1 — zoom to fit. Nothing to fit until 1.3, so reset to 1:1.
@@ -142,6 +194,8 @@ export function useViewportControls(ref: RefObject<HTMLElement | null>) {
     window.addEventListener("blur", onBlur);
 
     return () => {
+      // A gesture must not keep animating a viewport this effect no longer owns.
+      if (zoomFrame) cancelAnimationFrame(zoomFrame);
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);

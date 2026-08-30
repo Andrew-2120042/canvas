@@ -3,6 +3,7 @@ import {
   activeFile, collectWorldRects, frameAt, parentOrigin, rectsIntersect, useDoc,
   type Rect,
 } from "../document/store";
+import { isLaidOut, localRect } from "../document/geometry";
 import { useTool } from "../state/tools";
 import { placeImageAt } from "./imageImport";
 import { useViewport } from "../state/viewport";
@@ -105,16 +106,50 @@ export function useCanvasInteraction(
         const n = af.doc.nodes[id];
         if (n) {
           const handle = handleEl.dataset.handle as HandleKey;
-          const origin: Rect = { x: n.x, y: n.y, width: n.width, height: n.height };
           e.preventDefault();
           e.stopPropagation();
           const gesture = `resize:${id}`;
+
+          // Dragging a handle is a request for this exact size, so the node
+          // stops sizing itself to its content. Without this the drag writes
+          // a width the renderer then ignores, and the handle springs back.
+          //
+          // A node its parent lays out keeps its place in the flow: resizing
+          // a card inside a stack should make the card bigger, not tear it
+          // out of the stack. Only the size is written, and the parent
+          // re-flows around it — so the handles that pull from the top or
+          // left resize against the opposite edge instead of moving it.
+          const inFlow = isLaidOut(af.doc, id);
+          const box = localRect(af.doc, id);
+          const origin: Rect = {
+            x: box?.x ?? n.x,
+            y: box?.y ?? n.y,
+            width: box?.width ?? n.width,
+            height: box?.height ?? n.height,
+          };
+          // As with a move: pressing a handle writes nothing. Only a handle
+          // that is actually dragged pins the node to a fixed size.
+          let sizing = false;
           drag(e, (w) => {
+            const dx = w.x - start.x;
+            const dy = w.y - start.y;
+            if (!sizing) {
+              if (Math.abs(dx) < CLICK_SLOP && Math.abs(dy) < CLICK_SLOP) return;
+              sizing = true;
+              if (n.sizeW !== "fixed" || n.sizeH !== "fixed") {
+                useDoc.getState().updateNode(
+                  id,
+                  { sizeW: "fixed", sizeH: "fixed", width: origin.width, height: origin.height },
+                  gesture,
+                );
+              }
+            }
+            const next = resizeRect(origin, handle, dx, dy);
             useDoc
               .getState()
               .setNodeRect(
                 id,
-                resizeRect(origin, handle, w.x - start.x, w.y - start.y),
+                inFlow ? { width: next.width, height: next.height } : next,
                 gesture,
               );
           });
@@ -196,14 +231,20 @@ export function useCanvasInteraction(
           if (!e.shiftKey) store.clearSelection();
           e.preventDefault();
           setMarquee({ x: start.x, y: start.y, width: 0, height: 0 });
+
+          // Nothing moves while a marquee is dragged, so the page is measured
+          // once here rather than on every pointer move. Reading layout each
+          // frame — right after writing a new selection — is what makes a
+          // rubber band over a large page stutter.
+          const page0 = activeFile().doc.pages[activeFile().currentPageId];
+          const placed = collectWorldRects(activeFile().doc, page0.children);
+
           drag(
             e,
             (w) => {
               const box = normalise(start.x, start.y, w.x, w.y);
               setMarquee(box);
-              const cur = activeFile();
-              const page = cur.doc.pages[cur.currentPageId];
-              const hits = collectWorldRects(cur.doc, page.children)
+              const hits = placed
                 .filter((n) => n.visible && !n.locked && rectsIntersect(box, n))
                 .map((n) => n.id);
               useDoc.getState().select([...new Set([...base, ...hits])]);
@@ -222,22 +263,47 @@ export function useCanvasInteraction(
           store.select([id]);
         }
 
-        // Capture origins up front so each move is applied to the start
-        // position, never accumulated from the previous frame.
-        const ids = activeFile().selection;
-        const origins = new Map<string, { x: number; y: number }>(
-          ids.map((nid: string) => {
-            const n = activeFile().doc.nodes[nid];
-            return [nid, { x: n.x, y: n.y }] as const;
-          }),
-        );
-
         e.preventDefault();
         // One key for the whole drag, so it collapses to a single undo step.
+        const ids = activeFile().selection;
         const gesture = `move:${ids.join(",")}:${Date.now()}`;
+
+        // Capture origins up front so each move is applied to the start
+        // position, never accumulated from the previous frame.
+        //
+        // A child its parent lays out has no x/y to move. Dragging one is the
+        // absolute-position override: it leaves the flow at exactly the spot
+        // it was already occupying, so the gesture starts without a jump.
+        // Measuring is only a read — nothing is written here, because a press
+        // is not yet a drag and selecting something must never move it.
+        const origins = new Map<string, { x: number; y: number }>();
+        const flowing = new Set<string>();
+        for (const nid of ids) {
+          const n = activeFile().doc.nodes[nid];
+          const spot = isLaidOut(activeFile().doc, nid)
+            ? localRect(activeFile().doc, nid)
+            : null;
+          if (spot) flowing.add(nid);
+          origins.set(nid, spot ?? { x: n.x, y: n.y });
+        }
+        // Nothing is written until the pointer has actually travelled. A
+        // click that happens to land on a node selects it and leaves it
+        // exactly where it was — which matters most for a node in a flow,
+        // where the first write would pull it out of the layout and shuffle
+        // everything around it.
+        let dragging = false;
         drag(e, (w) => {
           const dx = w.x - start.x;
           const dy = w.y - start.y;
+          if (!dragging) {
+            if (Math.abs(dx) < CLICK_SLOP && Math.abs(dy) < CLICK_SLOP) return;
+            dragging = true;
+            const st0 = useDoc.getState();
+            for (const nid of flowing) {
+              const o = origins.get(nid)!;
+              st0.updateNode(nid, { placement: "absolute", x: o.x, y: o.y }, gesture);
+            }
+          }
           const st = useDoc.getState();
           origins.forEach((o, nid) =>
             st.setNodeRect(nid, { x: o.x + dx, y: o.y + dy }, gesture));
@@ -252,7 +318,15 @@ export function useCanvasInteraction(
       onEnd?: (world: { x: number; y: number }) => void,
     ) {
       const elm = ref.current!;
-      elm.setPointerCapture(e.pointerId);
+      // Capture is an optimisation, not a requirement: it keeps events coming
+      // when the pointer leaves the element. It throws for a pointer the
+      // browser no longer considers active, and losing the whole gesture —
+      // listeners included — over that would be worse than tracking without it.
+      try {
+        elm.setPointerCapture(e.pointerId);
+      } catch {
+        // Tracked without capture.
+      }
       let last = toWorld(e);
 
       const move = (m: PointerEvent) => {
@@ -260,7 +334,11 @@ export function useCanvasInteraction(
         onMove(last);
       };
       const up = () => {
-        elm.releasePointerCapture(e.pointerId);
+        try {
+          elm.releasePointerCapture(e.pointerId);
+        } catch {
+          // Never captured, or already released.
+        }
         elm.removeEventListener("pointermove", move);
         elm.removeEventListener("pointerup", up);
         elm.removeEventListener("pointercancel", up);

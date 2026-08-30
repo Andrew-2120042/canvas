@@ -1,4 +1,5 @@
 import { useActive, useDoc } from "../document/store";
+import { isLaidOut, localRect } from "../document/geometry";
 import type { SceneNode } from "../document/types";
 import { useViewport } from "../state/viewport";
 import { CheckRow, ColorField, IconButton, NumberField, Section } from "../panels/fields";
@@ -40,6 +41,33 @@ export function RightPanel() {
   const setAll = (patch: Partial<SceneNode>) => {
     const st = useDoc.getState();
     nodes.forEach((n) => st.updateNode(n.id, patch));
+  };
+
+  /**
+   * What the geometry fields show, and what typing in them means.
+   *
+   * A node its parent lays out has no x/y of its own, so the panel reads the
+   * rendered position instead of the stored one. Typing a position into it is
+   * the same request as dragging it: leave the flow and sit exactly there.
+   * Typing a size is a request for that size, so the node stops sizing itself
+   * to its content.
+   */
+  const geometry = (n: SceneNode) => localRect(doc, n.id) ?? n;
+
+  const setGeometry = (patch: Partial<SceneNode>, axis: "pos" | "w" | "h") => {
+    const st = useDoc.getState();
+    nodes.forEach((n) => {
+      const box = geometry(n);
+      const extra: Partial<SceneNode> =
+        axis === "pos"
+          ? isLaidOut(doc, n.id)
+            ? { placement: "absolute", x: box.x, y: box.y }
+            : {}
+          : axis === "w"
+            ? { sizeW: "fixed" }
+            : { sizeH: "fixed" };
+      st.updateNode(n.id, { ...extra, ...patch });
+    });
   };
 
   return (
@@ -91,16 +119,16 @@ export function RightPanel() {
             }
           >
             <div className="field-row">
-              <NumberField label="X" value={common(nodes, (n) => n.x)}
-                onCommit={(v) => setAll({ x: v })} />
-              <NumberField label="Y" value={common(nodes, (n) => n.y)}
-                onCommit={(v) => setAll({ y: v })} />
+              <NumberField label="X" value={common(nodes, (n) => Math.round(geometry(n).x))}
+                onCommit={(v) => setGeometry({ x: v }, "pos")} />
+              <NumberField label="Y" value={common(nodes, (n) => Math.round(geometry(n).y))}
+                onCommit={(v) => setGeometry({ y: v }, "pos")} />
             </div>
             <div className="field-row">
-              <NumberField label="W" value={common(nodes, (n) => n.width)}
-                onCommit={(v) => setAll({ width: Math.max(1, v) })} />
-              <NumberField label="H" value={common(nodes, (n) => n.height)}
-                onCommit={(v) => setAll({ height: Math.max(1, v) })} />
+              <NumberField label="W" value={common(nodes, (n) => Math.round(geometry(n).width))}
+                onCommit={(v) => setGeometry({ width: Math.max(1, v) }, "w")} />
+              <NumberField label="H" value={common(nodes, (n) => Math.round(geometry(n).height))}
+                onCommit={(v) => setGeometry({ height: Math.max(1, v) }, "h")} />
             </div>
           </Section>
 

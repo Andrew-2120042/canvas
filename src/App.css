@@ -409,11 +409,24 @@ body {
    turns to mush past a few hundred percent zoom. Without it the engine
    re-rasterises at the composited scale and glyphs stay vector-crisp, which
    is the whole point of rendering the canvas as real DOM. */
-.canvas-content {
+.canvas-pan {
   position: absolute;
   top: 0;
   left: 0;
   transform-origin: 0 0;
+}
+
+/* Deliberately NOT `will-change: transform`. That pins the subtree to a
+   texture rasterised once, which is the very thing the zoom handling above
+   exists to avoid. */
+
+/* Positioned, so it is the offsetParent every node's geometry resolves
+   against — see document/geometry.ts. Offsets inside a zoomed subtree stay in
+   unscaled CSS pixels, which is exactly the canvas's own coordinate space. */
+.canvas-content {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .right-panel-header {
@@ -442,6 +455,19 @@ body {
 .scene-node {
   position: absolute;
   box-sizing: border-box;
+  /* Measure glyphs from the outlines rather than from hinted, integer-rounded
+     advances. Scale then stops changing how text measures: the same string
+     occupies the same proportional width at 30% as at 300%, so laying the
+     canvas out at the viewing scale — which is what keeps it sharp — cannot
+     re-wrap a line that fitted a moment ago. */
+  /* Text must measure the same however far the canvas is zoomed, or auto-sized
+     text changes width and the layout shifts under the user. Two things break
+     that: hinted, integer-rounded glyph advances (geometricPrecision takes the
+     advances from the outlines instead), and optical sizing, where a variable
+     font substitutes a different design at a different size — that one alone
+     moved a tab label by 13%. */
+  text-rendering: geometricPrecision;
+  font-optical-sizing: none;
 }
 
 /* Frames read as containers even when empty and unfilled. */
@@ -1510,13 +1536,21 @@ body {
  * The node is in the document immediately — only its appearance is paced, so
  * an agent reading the canvas back always sees what it just wrote.
  */
+/* Deliberately opacity-only, with no transform.
+
+   Animating `transform` promotes the node to a composited layer rasterised at
+   whatever scale it had when the animation began, and the canvas layer is
+   already scaled by the viewport zoom. Zoomed in, that texture is upscaled
+   and the node — text, icons, edges — turns to mush for the duration. It
+   showed up exactly when someone was watching an agent build while zoomed in.
+   A fade reads as an arrival just as well and leaves the glyphs vector-crisp. */
 .scene-node.is-arriving {
   animation: node-arrive 420ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
 }
 
 @keyframes node-arrive {
-  from { opacity: 0; transform: scale(0.94); }
-  to   { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* Pulsing border while the agent is still working on this node. */
@@ -1572,3 +1606,12 @@ body {
 
 .build-chip.is-done .build-dot { background: #4FB37C; animation: none; }
 .build-count { color: var(--text-dim); }
+
+/* SVG nodes render their markup at the node's own size. */
+.node-svg,
+.node-svg > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}

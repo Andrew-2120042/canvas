@@ -136,11 +136,7 @@ export function useKeyboard() {
         const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
         if (dx === 0 && dy === 0) return;
         e.preventDefault();
-        const key = `nudge:${sel.join(",")}`;
-        sel.forEach((id) => {
-          const n = activeFile().doc.nodes[id];
-          if (n) st.setNodeRect(id, { x: n.x + dx, y: n.y + dy }, key);
-        });
+        st.moveBy(sel, dx, dy, `nudge:${sel.join(",")}`);
         return;
       }
 
