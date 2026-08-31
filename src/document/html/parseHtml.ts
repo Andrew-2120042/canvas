@@ -931,8 +931,19 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   // `relative` is what a flowed child already is, so it is accepted silently.
   // Sticky and fixed have no meaning on an infinite canvas with no scroller.
   const position = style.get("position")?.trim();
-  if (position === "absolute") props.placement = "absolute";
-  else if (position && position !== "relative" && position !== "static") {
+  if (position === "absolute" || position === "fixed") {
+    // Fixed is treated as absolute, which is the closest thing a canvas has.
+    //
+    // There is no scroller here, so "stays put while the page scrolls" has
+    // nothing to mean — but "out of flow, pinned to that offset" does, and it
+    // is what the element looks like at rest. Leaving it in flow was much
+    // worse than approximating it: a fixed header took up its own height in
+    // the layout, pushing the whole page down by that much, and its white
+    // text landed on the white background it had been sitting above rather
+    // than on the photograph it was designed to overlay. One unmapped
+    // property, and the top of every page using one was wrong twice over.
+    props.placement = "absolute";
+  } else if (position && position !== "relative" && position !== "static") {
     unmapped.add(`position: ${position}`);
   }
   // A percentage offset is not a length: reading "50%" with parseFloat would

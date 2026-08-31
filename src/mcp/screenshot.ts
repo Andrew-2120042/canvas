@@ -219,6 +219,63 @@ function hidePhotosRule(doc: Doc, photos: Photo[]): string {
 }
 
 /**
+ * Properties that a child can be left to inherit inside a capture.
+ *
+ * Nothing inherits in the node model, so every text node carries its own
+ * typography — correct for the document, and enormously repetitive once
+ * written out as markup. A page's body font is the same string on every one
+ * of a few hundred elements, and the rasteriser takes the whole document as a
+ * single URL with a length limit it neither documents nor reports: past it,
+ * the image silently never loads and a screenshot of a long page just fails.
+ *
+ * A capture is HTML, and HTML does inherit. So a value identical to the
+ * parent's is dropped from the copy and inherited instead — the same pixels
+ * from a fraction of the bytes. Only from the copy: the document itself is
+ * untouched, and a node that differs from its parent keeps its own value.
+ */
+const INHERITABLE = [
+  "color", "fontFamily", "fontSize", "fontWeight", "fontStyle", "fontStretch",
+  "lineHeight", "letterSpacing", "textAlign", "textTransform", "whiteSpace",
+  "wordBreak",
+] as const;
+
+/**
+ * The canvas's own text defaults, stood down for the length of a capture.
+ *
+ * `.scene-node--text` names a font, and a class rule beats inheritance — so
+ * dropping an inline font-family would hand the element the interface font
+ * rather than its parent's. Telling those declarations to inherit makes the
+ * compression below safe.
+ */
+export const INHERIT_TEXT_DEFAULTS =
+  ".scene-node--text{font-family:inherit;line-height:inherit;" +
+  "white-space:inherit;word-break:inherit}";
+
+/** Drop declarations a copy can inherit from its parent. */
+function compressInherited(root: HTMLElement): void {
+  const walk = (el: HTMLElement, inherited: Record<string, string>): void => {
+    const own: Record<string, string> = { ...inherited };
+    if (el.style) {
+      for (const prop of INHERITABLE) {
+        const value = el.style[prop as never] as unknown as string;
+        if (!value) continue;
+        if (inherited[prop] === value) {
+          el.style.removeProperty(
+            prop.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`),
+          );
+        } else {
+          own[prop] = value;
+        }
+      }
+    }
+    for (const child of Array.from(el.children)) {
+      walk(child as HTMLElement, own);
+    }
+  };
+  walk(root, {});
+}
+
+/**
  * Take the entrance animation off a copy.
  *
  * A node the agent just made carries `is-arriving`, whose keyframes start at
@@ -229,12 +286,23 @@ function hidePhotosRule(doc: Doc, photos: Photo[]): string {
  * the animation was on its way to.
  */
 export function settle(root: HTMLElement): void {
+  compressInherited(root);
   for (const el of [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))]) {
     el.classList?.remove("is-arriving", "is-building");
     if (el.style) {
+      // Cancelling the animation is enough. The entrance starts from
+      // `opacity: 0` in its keyframes, not from anything written on the
+      // element, so removing the class and the animation already restores
+      // whatever the node's own opacity is.
+      //
+      // This used to clear an inline `opacity: 0` as well, on the theory that
+      // it must have come from the entrance. It does not: a page hides things
+      // that way on purpose — a floating menu that fades in, a panel waiting
+      // to be opened — and clearing it made every one of them visible in
+      // every capture. A whole navigation drawer appeared over a hero that
+      // was correct underneath it.
       el.style.animation = "none";
       el.style.animationDelay = "";
-      el.style.opacity = el.style.opacity === "0" ? "" : el.style.opacity;
     }
   }
 }
@@ -256,7 +324,8 @@ export async function renderVectors(
   ctx: CanvasRenderingContext2D;
   layer: HTMLImageElement;
 }> {
-  const css = (includeAppCss ? collectCss() : "") + extraCss;
+  const css =
+    (includeAppCss ? collectCss() + INHERIT_TEXT_DEFAULTS : "") + extraCss;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
     `viewBox="0 0 ${width} ${height}">` +
@@ -265,7 +334,30 @@ export async function renderVectors(
     `<style>${css}</style>${html}` +
     `</div></foreignObject></svg>`;
 
-  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  // A data URL rather than a blob, despite the length limit that implies.
+  //
+  // A blob URL has no limit and would be the obvious answer, but an SVG
+  // loaded from one fails to load here at any size — tried, and it broke the
+  // smallest fixture as readily as the largest page. So the payload has to be
+  // kept small enough for a data URL instead, which is why so little is
+  // written onto each element in the first place.
+  // Base64 rather than percent-encoding.
+  //
+  // A data URL has a length limit the browser neither documents nor reports:
+  // past it the image never loads and there is no error to catch. Markup for
+  // a real design is a few hundred kilobytes, and percent-encoding inflates
+  // that by up to three times, because almost every character in CSS — the
+  // quotes, spaces, semicolons, colons and braces — becomes three bytes.
+  // Base64 costs a flat third instead, which is the difference between a long
+  // page rasterising and silently not.
+  const bytes = new TextEncoder().encode(svg);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    // Chunked: spreading a few hundred thousand arguments into one call
+    // overflows the stack.
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  const url = `data:image/svg+xml;base64,${btoa(binary)}`;
   const img = new Image();
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve();

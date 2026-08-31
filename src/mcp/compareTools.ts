@@ -222,6 +222,27 @@ function inheritedFrom(el: HTMLElement): string {
   return out;
 }
 
+/** Turn viewport units into the lengths they meant. A `100vh` inside an SVG
+ *  band resolves against the band, so a page written in viewport units laid
+ *  out completely differently on the two sides — one band that holds two spec
+ *  cards on the canvas came back from the source blank. Substituted rather
+ *  than resolved, because a substitution is exact and works inside clamp()
+ *  and min() for free. */
+function pinViewportUnits(css: string, width: number, height: number): string {
+  return css.replace(
+    /(-?[\d.]+)(vw|vh|vmin|vmax|svh|lvh|dvh|svw|lvw|dvw)\b/gi,
+    (whole, n: string, unit: string) => {
+      const v = parseFloat(n);
+      if (!Number.isFinite(v)) return whole;
+      const u = unit.toLowerCase();
+      const basis = u.endsWith("vw") ? width
+        : u.endsWith("vh") ? height
+        : u === "vmin" ? Math.min(width, height) : Math.max(width, height);
+      return `${(v * basis) / 100}px`;
+    },
+  );
+}
+
 /** One rasterised side as a PNG, for looking at rather than measuring. */
 async function toPng(data: ImageData): Promise<string> {
   const canvas = document.createElement("canvas");
@@ -457,7 +478,8 @@ export function registerCompareTools(): void {
       // them with the app stylesheet, and without this the two sides would be
       // set in different fonts and every word would register as a difference.
       const css =
-        `${adoptedFontCss()}\n${withoutFontFaces(sourceCss)}\n` +
+        `${adoptedFontCss()}\n` +
+        `${pinViewportUnits(withoutFontFaces(sourceCss), width, viewportHeightFor(width))}\n` +
         `.cmp-body{${bodyStyle}}\n${SUPPRESS_PSEUDO}\n${MATCH_TEXT_METRICS}`;
       let a: ImageData;
       let b: ImageData;

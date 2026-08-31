@@ -62,12 +62,8 @@
  */
 const ALWAYS_CARRIED = new Set([
   "color", "font-family", "font-size", "font-weight", "font-style",
-  "font-stretch", "font-variant", "font-variant-numeric", "font-feature-settings",
-  "font-variation-settings", "line-height", "letter-spacing", "word-spacing",
-  "text-align", "text-indent", "text-transform", "text-decoration-line",
-  "white-space", "word-break", "overflow-wrap", "hyphens", "direction",
-  "list-style-type", "list-style-position", "font-optical-sizing",
-  "text-rendering", "-webkit-font-smoothing", "font-kerning",
+  "font-stretch", "line-height", "letter-spacing", "text-align",
+  "text-transform", "text-decoration-line", "white-space", "word-break",
 ]);
 
 const NOT_CARRIED = new Set<string>([
@@ -354,6 +350,35 @@ function isDerived(
 }
 
 /**
+ * Carried on every element, not only the ones with words in them.
+ *
+ * Box sizing is not inherited, but it needs the same treatment for the same
+ * reason: the canvas has its own default and it is not the web's. Every node
+ * is laid out border-box, so a page that never says otherwise — and most do
+ * not, since content-box is the CSS default — has each element's computed
+ * width read as a content width and then applied as a border width. Every box
+ * shrinks by its own padding and border, all the way down. Cards came out
+ * narrower than their source and the text inside them wrapped a word early.
+ */
+const ALWAYS_CARRIED_ANY = new Set(["box-sizing"]);
+
+/**
+ * True when this element has words of its own.
+ *
+ * Typography only has to be written down where there is text to render. On a
+ * real page that is roughly a third of the elements, and writing all of it
+ * onto the other two thirds tripled the size of a converted document for no
+ * effect anybody could see — enough, on one page, that the rasteriser refused
+ * the result outright.
+ */
+function hasOwnText(el: Element): boolean {
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === 3 && (node.textContent ?? "").trim()) return true;
+  }
+  return false;
+}
+
+/**
  * A viewport of the artboard's own size, to resolve the page inside.
  *
  * The resolver used to mount markup in a hidden div, which is wrong in a way
@@ -565,6 +590,7 @@ export async function inlineStylesheet(
 
     const computed = view.getComputedStyle(el);
     const reference = referenceStyle(tag, root);
+    const carriesText = hasOwnText(el);
     const own = el.getAttribute("style") ?? "";
 
     // Only what differs from a bare element of the same tag: everything else
@@ -577,7 +603,10 @@ export async function inlineStylesheet(
       if (!value) continue;
       // An inherited property is kept even when it matches the reference,
       // because the reference inherited it too — see ALWAYS_CARRIED.
-      if (!ALWAYS_CARRIED.has(prop) && value === reference[prop]) continue;
+      const alwaysKeep =
+        ALWAYS_CARRIED_ANY.has(prop) ||
+        (ALWAYS_CARRIED.has(prop) && carriesText);
+      if (!alwaysKeep && value === reference[prop]) continue;
       if (isDerived(prop, value, computed, el)) continue;
       extra += `${prop}:${value};`;
     }
