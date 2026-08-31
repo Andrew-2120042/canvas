@@ -393,10 +393,27 @@ export function renderStyle(
           : node.gradient
             ? gradientCss(node.gradient)
             : rgba(node.fill, 1),
-    color: isText ? node.fill : undefined,
     opacity: node.opacity,
-    overflow: node.clipContent ? "hidden" : undefined,
   };
+
+  // A property whose value is undefined must not be *present*.
+  //
+  // React does not skip an undefined style value — it clears the property,
+  // and clearing a shorthand clears its longhands with it. So writing
+  // `overflow: undefined` after the node's own CSS had set overflow-x and
+  // overflow-y wiped both of them, and a box that had asked to clip stopped
+  // clipping. That is how a collapsed accordion panel — zero height, overflow
+  // hidden, the standard 0fr trick — spilled its whole contents down the page
+  // over the section beneath it.
+  //
+  // The same shape was one line above: `color: undefined` on any non-text
+  // node would have cleared a colour the node was passing through.
+  //
+  // Verified by exporting the node and rendering it in a browser, which
+  // clipped correctly — the CSS was right and the renderer was overwriting it.
+  if (isText && node.fill !== undefined) style.color = node.fill;
+  if (node.clipContent) style.overflow = "hidden";
+
   return style;
 }
 
