@@ -128,11 +128,32 @@ function schedule() {
   }, DEBOUNCE_MS);
 }
 
+/**
+ * Note that the view moved, without scheduling a save for it.
+ *
+ * Panning and zooming were treated as document edits, so every pause longer
+ * than the debounce serialised the whole file — and on a document of a few
+ * thousand nodes that is megabytes of JSON stringified on the main thread,
+ * between one wheel event and the next. A gesture is full of pauses that
+ * long, so the cost landed repeatedly, and the canvas got heavier to move
+ * around the more work was on it. Which is exactly backwards: the moment a
+ * file is big enough to need navigating is the moment navigating it stops
+ * being free.
+ *
+ * Where the viewport is looking is not something the document knows about.
+ * Losing it costs the user a scroll position, so it is written when the
+ * window goes away and whenever a real edit saves anyway — never on its own
+ * account, and never during a gesture.
+ */
+function noteViewMoved() {
+  dirty = true;
+}
+
 /** Autosave on every document change, plus a final flush on the way out so a
  *  quit inside the debounce window does not lose the last edit. */
 export function startAutosave(): () => void {
   const unsubDoc = useDoc.subscribe(schedule);
-  const unsubView = useViewport.subscribe(schedule);
+  const unsubView = useViewport.subscribe(noteViewMoved);
   const unsubUi = useUi.subscribe(schedule);
   const unsubAgent = useAgent.subscribe(schedule);
 
