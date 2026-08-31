@@ -373,7 +373,7 @@ function isDerived(
  * one screen, and an artboard is a whole scrolling page. Sizing the frame to
  * the page would make a hero that fills the screen fill six thousand pixels.
  */
-function viewportHeightFor(width: number): number {
+export function viewportHeightFor(width: number): number {
   if (width <= 480) return 844;   // phone
   if (width <= 834) return 1024;  // tablet
   return 900;                     // desktop
@@ -441,6 +441,36 @@ export function hasStylesheet(html: string): boolean {
 }
 
 /**
+ * Point a page's own files at where they actually are.
+ *
+ * Markup arrives as a string, and a string has no directory. A page that
+ * keeps its photographs beside itself — `url('hero.jpg')`, `src="logo.svg"` —
+ * therefore arrives with every reference pointing at nothing, and converts to
+ * a design full of empty boxes. It is not a rendering failure and not a
+ * parsing one: the file simply was never findable from where the markup ended
+ * up.
+ *
+ * Rewritten before the markup is mounted, so the browser loads the real files
+ * and every measurement that depends on them — an image's intrinsic size, a
+ * background's cover crop — is taken against the real thing.
+ *
+ * Absolute paths, data URLs and remote URLs are already resolvable and are
+ * left exactly as they are.
+ */
+function resolveAgainst(html: string, base: string): string {
+  const dir = base.replace(/\/+$/, "");
+  const external = (url: string): boolean =>
+    !!url && !/^(https?:|data:|blob:|asset:|file:|#|\/\/|\/)/i.test(url);
+  const abs = (url: string): string => `${dir}/${url.replace(/^\.\//, "")}`;
+
+  return html
+    .replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (whole, q, url) =>
+      external(url) ? `url(${q}${abs(url)}${q})` : whole)
+    .replace(/\b(src|href|poster)\s*=\s*(['"])([^'"]+)\2/gi, (whole, attr, q, url) =>
+      external(url) ? `${attr}=${q}${abs(url)}${q}` : whole);
+}
+
+/**
  * Mount `html`, let the browser resolve its stylesheet, and return the same
  * markup with every rule written inline and the stylesheet removed.
  *
@@ -450,11 +480,13 @@ export function hasStylesheet(html: string): boolean {
 export async function inlineStylesheet(
   html: string,
   width: number,
+  /** The directory the markup came from, so its own files can be found. */
+  basePath?: string,
 ): Promise<{ html: string; fonts: { families: string[]; loaded: string[] } }> {
   const { doc } = await getHost(width);
   const view = doc.defaultView ?? window;
   const root = doc.body;
-  root.innerHTML = html;
+  root.innerHTML = basePath ? resolveAgainst(html, basePath) : html;
 
   // The page's own faces, registered and loaded before anything is measured.
   // Awaited rather than fired off: every width and height read below is a

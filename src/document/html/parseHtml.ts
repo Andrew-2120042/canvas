@@ -938,7 +938,10 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   // A percentage offset is not a length: reading "50%" with parseFloat would
   // pin the node at 50 pixels. The model holds absolute offsets as numbers, so
   // percentages are reported rather than quietly turned into the wrong place.
-  for (const [prop, key] of [["left", "x"], ["top", "y"]] as const) {
+  for (const [prop, key, opposite] of [
+    ["left", "x", "right"],
+    ["top", "y", "bottom"],
+  ] as const) {
     const raw = style.get(prop);
     if (raw === undefined) continue;
     if (raw.trim().endsWith("%")) {
@@ -947,6 +950,22 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
     }
     const v = px(raw);
     if (v !== undefined) props[key] = v;
+
+    // An element pinned to *both* edges is being stretched, and that is a
+    // different instruction from being placed at an offset. The model holds
+    // one number per axis, so it cannot say "both", and the renderer resolves
+    // the ambiguity by standing aside wherever the opposite edge is named —
+    // which for `inset: 0` meant emitting neither, leaving a full-bleed
+    // overlay with a right edge, no left edge, and therefore no width at all.
+    // A hero's whole scrim collapsed to a zero-width sliver.
+    //
+    // So when both edges are given, the near one is passed through as CSS
+    // beside the far one and the browser stretches the box, exactly as the
+    // page asked.
+    const far = style.get(opposite);
+    if (far !== undefined && far.trim() !== "auto" && raw.trim() !== "auto") {
+      passthrough[prop] = raw;
+    }
   }
 
   // `flex: 1` is how a filling child is written far more often than
@@ -1337,6 +1356,7 @@ function closeVoidClones(html: string): string {
 export async function parseHtml(
   html: string,
   containerWidth = 1440,
+  basePath?: string,
 ): Promise<ParseResult> {
   // Every fragment goes through the browser, not just the ones carrying a
   // stylesheet. Resolving only those meant two implementations of what markup
@@ -1347,7 +1367,7 @@ export async function parseHtml(
   // fit-content button spanning its column, display:block not meaning flow.
   //
   // One authority. Mounting costs a layout pass; being wrong costs the design.
-  const { html: source, fonts } = await inlineStylesheet(html, containerWidth);
+  const { html: source, fonts } = await inlineStylesheet(html, containerWidth, basePath);
 
   const doc = new DOMParser().parseFromString(
     `<div id="__root">${closeVoidClones(source)}</div>`,

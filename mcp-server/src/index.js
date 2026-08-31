@@ -50,11 +50,17 @@ async function resolveRelativeRefs(html, base) {
     }
   }
 
-  // Anything else pointing at a file on disk gets the full path.
+  // Anything else pointing at a file on disk gets the full path — including
+  // a CSS url(), which is how a page names most of its photographs and which
+  // an attribute-only rewrite silently misses.
   html = html.replace(
-    /\b(src|href)\s*=\s*["']([^"']+)["']/gi,
+    /\b(src|href|poster)\s*=\s*["']([^"']+)["']/gi,
     (whole, attr, url) =>
       external(url) ? `${attr}="${resolve(base, url)}"` : whole,
+  );
+  html = html.replace(
+    /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,
+    (whole, q, url) => (external(url) ? `url(${q}${resolve(base, url)}${q})` : whole),
   );
   return html;
 }
@@ -615,6 +621,8 @@ function buildServer() {
           .describe("A frame to insert into. Omit to add at page level."),
         mode: z.enum(["insert-children", "replace-children"]).optional()
           .describe("Append to the target, or replace what it holds. Default append."),
+        basePath: z.string().optional()
+          .describe("The directory this markup came from. Give it whenever the markup uses relative file references — url('hero.jpg'), src=\"logo.svg\" — or those files cannot be found and the design converts with empty boxes where its pictures should be."),
       },
     },
     async (args) => text(await bridge.call("write_html", args)),

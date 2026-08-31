@@ -1,5 +1,9 @@
 import { activeFile } from "../document/store";
-import { adoptedFontCss, materialisePseudo } from "../document/html/resolveCss";
+import {
+  adoptedFontCss,
+  materialisePseudo,
+  viewportHeightFor,
+} from "../document/html/resolveCss";
 import { renderVectors, settle } from "./screenshot";
 import { registerTool } from "./bridge";
 
@@ -282,9 +286,17 @@ export function registerCompareTools(): void {
     // which is the artboard's width, which is the whole point.
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
+    // The same viewport the conversion resolved against.
+    //
+    // A page that asks for `min-height: 100vh` gets a different answer in a
+    // 1200px frame than in the 900px one the conversion used, so a full-height
+    // hero came out 300px shorter on one side than the other and every row
+    // beneath it was compared against the wrong thing. The two sides have to
+    // agree on what a screenful is before anything else they measure means
+    // anything.
     frame.style.cssText =
       `position:absolute;left:-99999px;top:0;border:0;visibility:hidden;` +
-      `width:${width}px;height:1200px`;
+      `width:${width}px;height:${viewportHeightFor(width)}px`;
     document.body.appendChild(frame);
 
     const loaded = new Promise<void>((done) => {

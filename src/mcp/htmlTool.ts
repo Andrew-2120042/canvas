@@ -130,7 +130,10 @@ export function registerHtmlTool(): void {
       return width || 1440;
     };
     const container = pageWidth(targetId);
-    const { nodes: parsed, ignored, conversion } = await parseHtml(html, container);
+    const basePath = args.basePath ? String(args.basePath) : undefined;
+    const { nodes: parsed, ignored, conversion } = await parseHtml(
+      html, container, basePath,
+    );
     if (parsed.length === 0) throw new Error("no elements found in the html");
 
     const flat: Array<{ node: SceneNode; children: NodeId[] }> = [];
