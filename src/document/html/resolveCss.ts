@@ -77,14 +77,15 @@ const CARRIED = [
  */
 export function materialisePseudo(el: HTMLElement, root: HTMLElement): void {
   for (const which of ["::before", "::after"] as const) {
-    const style = getComputedStyle(el, which);
+    const view = el.ownerDocument.defaultView ?? window;
+    const style = view.getComputedStyle(el, which);
     const content = style.getPropertyValue("content");
     // "none" is the default and means there is no pseudo-element. An empty
     // string is not nothing: `content: ""` is exactly how a decorative box is
     // written, and it is the common case for a scrim.
     if (!content || content === "none" || content === "normal") continue;
 
-    const node = document.createElement("div");
+    const node = el.ownerDocument.createElement("div");
     let decl = "";
     for (const prop of CARRIED) {
       const value = style.getPropertyValue(prop);
@@ -224,19 +225,58 @@ export async function adoptFonts(css: string): Promise<{
   return { families, loaded };
 }
 
-/** One hidden host, reused, so a build does not churn the document. */
-let host: HTMLElement | null = null;
+/**
+ * A viewport of the artboard's own size, to resolve the page inside.
+ *
+ * The resolver used to mount markup in a hidden div, which is wrong in a way
+ * that is invisible until you measure it: `vw` and `vh` resolve against the
+ * real browser viewport, never against a container. So a page written in
+ * viewport units — and real pages are, this one uses them 469 times — was
+ * resolved against the app window rather than the artboard. Measured, `50vw`
+ * came out 756px instead of 720: the window was 1512 wide, so every viewport
+ * dimension on the page was 5% too large, and every one of them compounded
+ * into the layout below it.
+ *
+ * An iframe is a viewport. Sized to the artboard, `100vw` is the artboard's
+ * width because that is simply what it is, and nothing has to be computed or
+ * corrected.
+ *
+ * Its height is a screenful rather than the page's full length: `100vh` means
+ * one screen, and an artboard is a whole scrolling page. Sizing the frame to
+ * the page would make a hero that fills the screen fill six thousand pixels.
+ */
+function viewportHeightFor(width: number): number {
+  if (width <= 480) return 844;   // phone
+  if (width <= 834) return 1024;  // tablet
+  return 900;                     // desktop
+}
 
-function getHost(): HTMLElement {
-  if (host && host.isConnected) return host;
-  host = document.createElement("div");
-  // Off-screen rather than hidden: `display: none` leaves computed styles
-  // unresolved, and the resolved values are the whole point.
-  host.style.cssText =
-    "position:absolute;left:-99999px;top:0;pointer-events:none;" +
-    "contain:layout style;visibility:hidden";
-  document.body.appendChild(host);
-  return host;
+let host: HTMLIFrameElement | null = null;
+
+async function getHost(width: number): Promise<{
+  frame: HTMLIFrameElement;
+  doc: Document;
+}> {
+  if (!host || !host.isConnected) {
+    host = document.createElement("iframe");
+    host.setAttribute("aria-hidden", "true");
+    host.style.cssText =
+      "position:absolute;left:-99999px;top:0;border:0;visibility:hidden";
+    document.body.appendChild(host);
+  }
+  host.style.width = `${Math.max(1, Math.round(width))}px`;
+  host.style.height = `${viewportHeightFor(width)}px`;
+
+  const doc = host.contentDocument;
+  if (!doc) throw new Error("could not open a viewport to resolve the page in");
+  // A fresh document each time: a page's stylesheet must not leak into the
+  // next one, and a rule from a previous conversion applying to this one
+  // would be the hardest possible bug to see.
+  referenceCache.clear();
+  doc.open();
+  doc.write("<!doctype html><html><head></head><body></body></html>");
+  doc.close();
+  return { frame: host, doc };
 }
 
 /** A bare element of the same tag, for comparison against the defaults. */
@@ -245,9 +285,10 @@ const referenceCache = new Map<string, Record<string, string>>();
 function referenceStyle(tag: string, root: HTMLElement): Record<string, string> {
   const cached = referenceCache.get(tag);
   if (cached) return cached;
-  const probe = document.createElement(tag);
+  const doc = root.ownerDocument;
+  const probe = doc.createElement(tag);
   root.appendChild(probe);
-  const computed = getComputedStyle(probe);
+  const computed = (doc.defaultView ?? window).getComputedStyle(probe);
   const out: Record<string, string> = {};
   for (const prop of CARRIED) out[prop] = computed.getPropertyValue(prop);
   probe.remove();
@@ -279,8 +320,9 @@ export async function inlineStylesheet(
   html: string,
   width: number,
 ): Promise<{ html: string; fonts: { families: string[]; loaded: string[] } }> {
-  const root = getHost();
-  root.style.width = `${Math.max(1, Math.round(width))}px`;
+  const { doc } = await getHost(width);
+  const view = doc.defaultView ?? window;
+  const root = doc.body;
   root.innerHTML = html;
 
   // The page's own faces, registered and loaded before anything is measured.
@@ -291,6 +333,11 @@ export async function inlineStylesheet(
     .map((tag) => tag.textContent ?? "")
     .join("\n");
   const fonts = await adoptFonts(sheets);
+  // The faces have to exist inside the viewport too, or it measures the
+  // fallback while the canvas renders the real thing.
+  const adopted = doc.createElement("style");
+  adopted.textContent = adoptedFontCss();
+  doc.head.appendChild(adopted);
 
   // Force layout once, so every computed value below is resolved.
   void root.offsetWidth;
@@ -308,7 +355,7 @@ export async function inlineStylesheet(
     const tag = el.tagName.toLowerCase();
     if (tag === "style" || tag === "script") continue;
 
-    const computed = getComputedStyle(el);
+    const computed = view.getComputedStyle(el);
     const reference = referenceStyle(tag, root);
     const own = el.getAttribute("style") ?? "";
 
