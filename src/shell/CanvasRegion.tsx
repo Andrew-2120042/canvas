@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { SceneNode } from "../document/types";
 import { useRenderAll } from "../state/render";
 import { MIN_ZOOM, useViewport } from "../state/viewport";
 import { SHORTCUTS, useTool } from "../state/tools";
@@ -83,13 +84,39 @@ export function CanvasRegion() {
 
   useEffect(() => {
     if (target === base) return;
-    // One exception to waiting: a gesture long enough to stretch the texture
-    // this far is visibly soft, so catch up immediately rather than ride it
-    // out. A normal flick never gets here.
-    const stretchedTooFar = residual > 3 || residual < 1 / 3;
-    const t = setTimeout(() => setBase(target), stretchedTooFar ? 0 : SETTLE_MS);
+    // Never re-lay-out in the middle of a gesture.
+    //
+    // A long zoom used to snap the layout the moment the transform had
+    // stretched past three times, on the grounds that the texture was visibly
+    // soft by then. It is — but the snap is a full layout pass and a repaint
+    // of everything on screen, so what the user sees is the canvas blink,
+    // once, at whatever zoom happens to cross the threshold. Softness that
+    // resolves the instant you stop is a far smaller cost than the picture
+    // flickering while you are still moving.
+    //
+    // So even the impatient path waits for a pause rather than firing at
+    // once. Wheel events arrive every ten to twenty milliseconds while a
+    // gesture is live, so this timer simply never reaches the end until the
+    // motion actually stops — and then it catches up almost immediately.
+    const stretchedTooFar = residual > 6 || residual < 1 / 6;
+    const t = setTimeout(() => setBase(target), stretchedTooFar ? 45 : SETTLE_MS);
     return () => clearTimeout(t);
   }, [target, base, residual]);
+
+  /**
+   * The viewport as it was when the motion last stopped.
+   *
+   * Culling is decided against this rather than against the live viewport, so
+   * an artboard is never mounted or unmounted while a gesture is running.
+   * Changing what is in the tree costs a layout pass exactly like changing the
+   * scale does, and doing it mid-zoom produces the same blink for the same
+   * reason.
+   */
+  const [settled, setSettled] = useState({ x: 0, y: 0, zoom: 1 });
+  useEffect(() => {
+    const t = setTimeout(() => setSettled({ x, y, zoom }), SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [x, y, zoom]);
 
 
   const tool = useTool((s) => s.tool);
@@ -125,20 +152,31 @@ export function CanvasRegion() {
     const h = el.clientHeight;
     if (!w || !h) return page.children;
 
+    // Tested against both the settled viewport and the live one: settled so
+    // the set is stable through a gesture, live so that panning somewhere new
+    // still brings its content in rather than waiting for the gesture to end.
+    // A board only leaves the tree once the motion has stopped.
+    const inView = (n: SceneNode, vx: number, vy: number, vz: number): boolean => {
+      const left = n.x * vz + vx;
+      const top = n.y * vz + vy;
+      return (
+        left + n.width * vz > -w && left < w * 2 &&
+        top + n.height * vz > -h && top < h * 2
+      );
+    };
     const kept = page.children.filter((id: string) => {
       const n = nodes[id];
       if (!n) return false;
-      const left = n.x * zoom + x;
-      const top = n.y * zoom + y;
-      const right = left + n.width * zoom;
-      const bottom = top + n.height * zoom;
-      return right > -w && left < w * 2 && bottom > -h && top < h * 2;
+      return (
+        inView(n, settled.x, settled.y, settled.zoom) ||
+        inView(n, x, y, zoom)
+      );
     });
     // Never render nothing. An empty canvas reads as lost work rather than as
     // a viewport parked in empty space, and a bug in the arithmetic above
     // should cost a frame of extra layout rather than the user's document.
     return kept.length ? kept : page.children;
-  }, [renderAll, page.children, nodes, x, y, zoom]);
+  }, [renderAll, page.children, nodes, x, y, zoom, settled]);
 
 
   /**
