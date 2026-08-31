@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRenderAll } from "../state/render";
 import { MIN_ZOOM, useViewport } from "../state/viewport";
 import { SHORTCUTS, useTool } from "../state/tools";
 import { activeFile, useActive, worldRect } from "../document/store";
@@ -89,9 +90,51 @@ export function CanvasRegion() {
     const t = setTimeout(() => setBase(target), stretchedTooFar ? 0 : SETTLE_MS);
     return () => clearTimeout(t);
   }, [target, base, residual]);
+
+
   const tool = useTool((s) => s.tool);
   const page = useActive((f) => f.doc.pages[f.currentPageId]);
   const pageId = useActive((f) => f.currentPageId);
+  const nodes = useActive((f) => f.doc.nodes);
+
+  /**
+   * The artboards worth laying out.
+   *
+   * A top-level board's rectangle is in the document already — nothing needs
+   * measuring to know where it is — so deciding this costs one comparison per
+   * board and saves the browser laying out everything inside the ones nobody
+   * is looking at.
+   *
+   * The margin is deliberately loose. Culling exactly at the edge would mean
+   * a board arriving in the same frame it becomes visible, and the layout it
+   * needs then lands in the middle of the gesture that revealed it — the
+   * stutter this exists to remove, moved rather than fixed. A screen of slack
+   * on each side means the work is done before it is wanted.
+   */
+  const renderAll = useRenderAll((s) => s.all);
+  const visibleChildren = useMemo(() => {
+    if (renderAll) return page.children;
+    const el = ref.current;
+    if (!el) return page.children;
+    const vw = el.clientWidth / zoom;
+    const vh = el.clientHeight / zoom;
+    const left = -x / zoom - vw;
+    const top = -y / zoom - vh;
+    const right = left + vw * 3;
+    const bottom = top + vh * 3;
+    const kept = page.children.filter((id: string) => {
+      const n = nodes[id];
+      if (!n) return false;
+      return (
+        n.x < right && n.x + n.width > left &&
+        n.y < bottom && n.y + n.height > top
+      );
+    });
+    // Never render nothing: an empty canvas reads as lost work rather than as
+    // a viewport parked in empty space.
+    return kept.length ? kept : page.children.slice(0, 1);
+  }, [renderAll, page.children, nodes, x, y, zoom]);
+
 
   /**
    * Show the new page's content when the page changes.
@@ -198,7 +241,7 @@ export function CanvasRegion() {
         }}
       >
       <div className="canvas-content" style={base === 1 ? undefined : { zoom: base }}>
-        {page.children.map((id: string) => (
+        {visibleChildren.map((id: string) => (
           <SceneNodeView key={id} id={id} />
         ))}
 

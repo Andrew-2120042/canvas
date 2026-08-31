@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { activeFile, useDoc } from "../document/store";
+import { withEverythingRendered } from "../state/render";
 
 /**
  * Link from the local MCP sidecar into this app.
@@ -136,7 +137,15 @@ function connect(port: number): void {
       return;
     }
     try {
-      const result = await fn(msg.args ?? {});
+      // Every tool runs against the whole page laid out, not just the part
+      // being looked at. The canvas leaves distant artboards out of the tree
+      // so that moving around stays cheap, and a tool reading geometry from
+      // an artboard that was never laid out would get nothing — or worse, a
+      // stale number — with no sign that anything was missing.
+      //
+      // The right way round: a wheel event happens sixty times a second and a
+      // tool call occasionally, so the occasional one pays.
+      const result = await withEverythingRendered(() => fn(msg.args ?? {}));
       socket?.send(JSON.stringify({ id: msg.id, ok: true, result }));
     } catch (err) {
       socket?.send(JSON.stringify({
