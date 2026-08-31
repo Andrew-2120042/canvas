@@ -15,51 +15,83 @@
  */
 
 /**
- * Properties worth carrying over.
+ * Properties NOT worth carrying over.
  *
- * A computed style has hundreds of entries, nearly all of them defaults.
- * Copying them all would bury the real design in noise and defeat the
- * comparison below, so this is the set that describes how something looks.
+ * This used to be the opposite — a list of the ~90 properties considered
+ * worth keeping — and every fidelity bug found this week was a property that
+ * was not on it. aspect-ratio, so constrained images collapsed to their
+ * natural height. box-sizing, so a 280px card rendered 320px wide.
+ * justify-items, so the icon in every round button sat against the left edge.
+ * isolation, so the hero's scrim slid behind the page. columns, so a
+ * four-column gallery came through as a single stack. Each was found
+ * separately, fixed by appending to the list, and told nothing about the next
+ * one — which is the signature of a whitelist rather than five unrelated
+ * defects.
+ *
+ * The list was also redundant. Each property is compared against a bare
+ * element of the same tag below, and *that* is what removes the noise a
+ * computed style is full of: a value equal to the tag's own default is
+ * dropped whether or not anyone thought to enumerate it. The whitelist was
+ * contributing omissions and nothing else.
+ *
+ * So everything is carried unless it is named here, and what is named here is
+ * only what is provably redundant or not visual: logical properties that
+ * duplicate the physical ones the layout already has, prefixed aliases of
+ * properties kept under their standard name, and behaviour that has no
+ * appearance on a static canvas.
  */
-const CARRIED = [
-  "display", "flex-direction", "flex-wrap", "justify-content", "align-items",
-  "align-self", "flex-grow", "flex-shrink", "flex-basis", "gap", "row-gap",
-  // Grid alignment. `align-items` alone was carried, which is half of
-  // `place-items: center` — so a grid centred its contents vertically and
-  // left them at the start horizontally. On a 56px circle holding a 22px
-  // icon that is a 17px error, and it is why every icon in a round button
-  // sat against the left edge instead of in the middle.
-  "justify-items", "justify-self", "align-content", "place-content",
-  "column-gap", "grid-template-columns", "grid-template-rows", "grid-column",
-  "grid-row", "position", "left", "top", "right", "bottom", "z-index",
-  "width", "height", "min-width", "min-height", "max-width", "max-height",
-  "padding-top", "padding-right", "padding-bottom", "padding-left",
-  "margin-top", "margin-right", "margin-bottom", "margin-left",
-  "background-color", "background-image", "background-size",
-  "background-position", "background-repeat", "color", "opacity",
-  "border-radius", "border-top-left-radius", "border-top-right-radius",
-  "border-bottom-right-radius", "border-bottom-left-radius",
-  "border-top-width", "border-right-width", "border-bottom-width",
-  "border-left-width", "border-top-color", "border-right-color",
-  "border-bottom-color", "border-left-color", "border-top-style",
-  "box-shadow", "overflow", "transform", "font-family", "font-size",
-  "font-weight", "font-style", "font-stretch", "line-height",
-  "letter-spacing", "text-align", "text-transform", "text-decoration-line",
-  "white-space", "object-fit", "backdrop-filter", "filter", "mix-blend-mode",
-  // Sizing rules that decide a box rather than decorate it. Leaving
-  // aspect-ratio out meant every constrained image lost its constraint and
-  // rendered at its natural height — on a page of photographs that turned a
-  // 6,500px page into a 29,700px one, which is not a subtle failure but was
-  // a silent one. box-sizing decides whether padding is inside the width,
-  // which is the difference between a 280px card and a 320px one.
-  "aspect-ratio", "box-sizing", "object-position", "order", "vertical-align",
-  "isolation", "z-index",
-  "text-indent", "word-break", "overflow-wrap", "text-overflow",
-  "border-right-style", "border-bottom-style", "border-left-style",
-  // Gradient text: the fill is transparent and the gradient is clipped to
-  // the glyphs, so losing either leaves a heading invisible or flat.
-  "background-clip", "-webkit-background-clip", "-webkit-text-fill-color",
-] as const;
+const NOT_CARRIED = new Set<string>([
+  // Logical duplicates of physical properties that are carried already.
+  "inline-size", "block-size", "min-inline-size", "min-block-size",
+  "max-inline-size", "max-block-size",
+  "inset-inline-start", "inset-inline-end", "inset-block-start",
+  "inset-block-end", "inset-inline", "inset-block", "inset",
+  "margin-inline-start", "margin-inline-end", "margin-block-start",
+  "margin-block-end", "margin-inline", "margin-block",
+  "padding-inline-start", "padding-inline-end", "padding-block-start",
+  "padding-block-end", "padding-inline", "padding-block",
+  "border-inline-start-width", "border-inline-end-width",
+  "border-block-start-width", "border-block-end-width",
+  "border-inline-start-color", "border-inline-end-color",
+  "border-block-start-color", "border-block-end-color",
+  "border-inline-start-style", "border-inline-end-style",
+  "border-block-start-style", "border-block-end-style",
+  "border-start-start-radius", "border-start-end-radius",
+  "border-end-start-radius", "border-end-end-radius",
+  "block-overflow", "overflow-inline", "overflow-block",
+
+  // Nothing on a static canvas animates, and carrying these onto every
+  // element would restart every animation on every render.
+  "animation", "animation-name", "animation-duration", "animation-delay",
+  "animation-timing-function", "animation-iteration-count",
+  "animation-direction", "animation-fill-mode", "animation-play-state",
+  "animation-composition", "animation-range", "animation-range-start",
+  "animation-range-end", "animation-timeline",
+  "transition", "transition-property", "transition-duration",
+  "transition-delay", "transition-timing-function", "transition-behavior",
+  "view-transition-name", "will-change", "offset-path", "offset-distance",
+
+  // Interaction, not appearance.
+  "cursor", "pointer-events", "user-select", "-webkit-user-select",
+  "touch-action", "caret-color", "accent-color", "scroll-behavior",
+  "overscroll-behavior", "overscroll-behavior-x", "overscroll-behavior-y",
+  "scroll-snap-type", "scroll-snap-align", "resize", "appearance",
+  "-webkit-appearance", "-webkit-tap-highlight-color",
+
+  // `content` is what materialisePseudo already read; writing it onto the
+  // element itself would draw a pseudo-element's text twice.
+  "content",
+
+  // Prefixed aliases of properties carried under their standard name. The two
+  // -webkit- properties that have no standard equivalent — background-clip
+  // for gradient text and text-fill-color with it — are deliberately absent
+  // from this list.
+  "-webkit-border-image", "-webkit-box-align", "-webkit-box-direction",
+  "-webkit-box-flex", "-webkit-box-ordinal-group", "-webkit-box-orient",
+  "-webkit-box-pack", "-webkit-locale", "-webkit-print-color-adjust",
+  "-webkit-rtl-ordering", "-webkit-font-smoothing", "-webkit-text-orientation",
+  "-webkit-writing-mode",
+]);
 
 /**
  * Pseudo-elements, made real.
@@ -93,7 +125,9 @@ export function materialisePseudo(el: HTMLElement, root: HTMLElement): void {
 
     const node = el.ownerDocument.createElement("div");
     let decl = "";
-    for (const prop of CARRIED) {
+    for (let i = 0; i < style.length; i += 1) {
+      const prop = style.item(i);
+      if (NOT_CARRIED.has(prop)) continue;
       const value = style.getPropertyValue(prop);
       if (value) decl += `${prop}:${value};`;
     }
@@ -232,6 +266,64 @@ export async function adoptFonts(css: string): Promise<{
 }
 
 /**
+ * Values a computed style derives from other values, rather than being told.
+ *
+ * Comparing against a bare element of the same tag removes properties left at
+ * their *global* default, which is most of them. It cannot remove one whose
+ * default is relative to the element itself, because the reference element is
+ * a different element: those differ by construction and come through on every
+ * node.
+ *
+ * Two families of them, and together they were three quarters of everything
+ * carried — around 24 declarations per node on a real page, none of which
+ * anybody wrote:
+ *
+ * Anything defaulting to `currentColor` — every border side, the outline, the
+ * text decoration, the column rule, the text fill and stroke — resolves to
+ * whatever `color` is. Since `color` is carried, restating it eight more
+ * times says nothing and cannot be edited meaningfully in the panel.
+ *
+ * And `transform-origin` and `perspective-origin` default to the element's
+ * own centre, so they resolve to half its width and height and differ from
+ * any reference whose size differs.
+ *
+ * Dropped only when they still hold the derived value. An element that
+ * actually sets a border colour, or moves its transform origin, keeps it.
+ */
+const CURRENT_COLOR_PROPS = new Set([
+  "border-top-color", "border-right-color", "border-bottom-color",
+  "border-left-color", "outline-color", "column-rule-color",
+  "text-decoration-color", "text-emphasis-color",
+  "-webkit-text-fill-color", "-webkit-text-stroke-color",
+  "caret-color", "stroke", "fill",
+]);
+
+function isDerived(
+  prop: string,
+  value: string,
+  computed: CSSStyleDeclaration,
+  el: HTMLElement,
+): boolean {
+  if (CURRENT_COLOR_PROPS.has(prop)) {
+    return value === computed.getPropertyValue("color");
+  }
+  if (prop === "transform-origin" || prop === "perspective-origin") {
+    // Measured, not offsetWidth: that rounds to a whole pixel, while the
+    // origin is computed from the real fractional box. On a 55.6px element
+    // the two read 28px and 27.8px and never matched, so the check never
+    // fired and both properties came through on every node on the page.
+    const box = el.getBoundingClientRect();
+    const parts = value.split(" ").map(parseFloat);
+    if (parts.length < 2 || parts.some(Number.isNaN)) return false;
+    return (
+      Math.abs(parts[0] - box.width / 2) < 0.5 &&
+      Math.abs(parts[1] - box.height / 2) < 0.5
+    );
+  }
+  return false;
+}
+
+/**
  * A viewport of the artboard's own size, to resolve the page inside.
  *
  * The resolver used to mount markup in a hidden div, which is wrong in a way
@@ -296,7 +388,10 @@ function referenceStyle(tag: string, root: HTMLElement): Record<string, string> 
   root.appendChild(probe);
   const computed = (doc.defaultView ?? window).getComputedStyle(probe);
   const out: Record<string, string> = {};
-  for (const prop of CARRIED) out[prop] = computed.getPropertyValue(prop);
+  for (let i = 0; i < computed.length; i += 1) {
+    const prop = computed.item(i);
+    out[prop] = computed.getPropertyValue(prop);
+  }
   probe.remove();
   referenceCache.set(tag, out);
   return out;
@@ -368,9 +463,12 @@ export async function inlineStylesheet(
     // Only what differs from a bare element of the same tag: everything else
     // is a default the parser would apply anyway.
     let extra = "";
-    for (const prop of CARRIED) {
+    for (let i = 0; i < computed.length; i += 1) {
+      const prop = computed.item(i);
+      if (NOT_CARRIED.has(prop)) continue;
       const value = computed.getPropertyValue(prop);
       if (!value || value === reference[prop]) continue;
+      if (isDerived(prop, value, computed, el)) continue;
       extra += `${prop}:${value};`;
     }
     // The element's own inline style goes last so it still wins, exactly as
