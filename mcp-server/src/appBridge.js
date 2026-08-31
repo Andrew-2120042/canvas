@@ -28,6 +28,8 @@ const SLOW_TIMEOUT_MS = 120_000;
  */
 export class AppBridge {
   constructor() {
+    /** How many times each tool has been called this session. */
+    this.calls = new Map();
     this.socket = null;
     this.pending = new Map();
   }
@@ -75,6 +77,14 @@ export class AppBridge {
         new Error("no canvas app is connected; open a file in the app first"),
       );
     }
+    // One line per tool call, so a session can be counted afterwards rather
+    // than watched. A claim about how an agent behaved — that it built in
+    // fifteen groups rather than one — is only worth making if the transcript
+    // can be checked against a log, and stderr is where this server's log
+    // already goes.
+    this.calls.set(op, (this.calls.get(op) ?? 0) + 1);
+    console.error(`[tool] ${op} (#${this.calls.get(op)})`);
+
     const id = randomUUID();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

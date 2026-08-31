@@ -270,12 +270,48 @@ export function registerReadTools(): void {
     };
     for (const root of roots) walk(root);
 
+    // Which top-level board each match came from.
+    //
+    // A page often holds several versions of the same design — an import
+    // beside a hand-built one, a before beside an after — and searching the
+    // whole page silently answers about whichever it reached first. That is
+    // worse than an error: the reply looks authoritative and is about the
+    // wrong object. It fooled me twice in ten minutes while I knew there were
+    // two boards, so saying so is the least this can do.
+    const boardOf = (id: NodeId): string | null => {
+      let cur: NodeId | null = id;
+      let last: NodeId | null = null;
+      while (cur) {
+        last = cur;
+        cur = doc.nodes[cur]?.parent ?? null;
+      }
+      return last;
+    };
+    const boards = new Map<string, number>();
+    for (const hit of hits) {
+      const board = boardOf(String(hit.id));
+      if (!board) continue;
+      boards.set(board, (boards.get(board) ?? 0) + 1);
+    }
+
     return {
       count: hits.length,
       // Said explicitly: a caller that cannot tell a complete result from a
       // capped one will act on the first few and believe it saw everything.
       truncated,
       nodes: hits,
+      ...(boards.size > 1
+        ? {
+            spansBoards: [...boards].map(([id, n]) => ({
+              board: doc.nodes[id]?.name ?? id,
+              id,
+              matches: n,
+            })),
+            note:
+              "Matches came from more than one top-level board. Pass nodeId " +
+              "to search inside the one you mean.",
+          }
+        : {}),
     };
   });
 

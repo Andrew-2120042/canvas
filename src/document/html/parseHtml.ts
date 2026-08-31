@@ -771,6 +771,45 @@ function hasMixedRuns(el: Element): boolean {
   return false;
 }
 
+/**
+ * Properties that place an element, as opposed to draw it.
+ *
+ * An icon is stored as its own markup, verbatim, because that is the only
+ * faithful thing to do with a drawing. But by the time it reaches here the
+ * resolver has written the whole computed cascade onto it — including where
+ * the browser decided it sits, which for an absolutely-placed one is a real
+ * offset from its container.
+ *
+ * The node then carries that placement too, so the drawing is offset twice:
+ * once correctly by its node, and again by itself, inside its own clipped
+ * box. On a page's decorative flourish that is 900px of offset and the icon
+ * simply disappears — while every other icon on the page is fine, because a
+ * static one resolves to left: 0 and the second offset is zero.
+ *
+ * Placement belongs to the node. The markup keeps everything that makes it a
+ * drawing and gives up everything that makes it a box.
+ */
+const SVG_PLACEMENT = new Set([
+  "position", "left", "top", "right", "bottom", "inset", "float", "clear",
+  "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
+  "z-index", "grid-area", "grid-column", "grid-row", "grid-column-start",
+  "grid-column-end", "grid-row-start", "grid-row-end", "align-self",
+  "justify-self", "order", "flex", "flex-grow", "flex-shrink", "flex-basis",
+]);
+
+/** The icon's own markup, with the node's placement taken back out of it. */
+function svgMarkup(el: Element): string {
+  const copy = el.cloneNode(true) as Element;
+  const style = parseStyle(copy.getAttribute("style") ?? "");
+  const kept = [...style]
+    .filter(([k]) => !SVG_PLACEMENT.has(k))
+    .map(([k, v]) => `${k}:${v}`)
+    .join(";");
+  if (kept) copy.setAttribute("style", kept);
+  else copy.removeAttribute("style");
+  return copy.outerHTML;
+}
+
 function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   const tag = el.tagName.toLowerCase();
   if (tag === "script" || tag === "style") return null;
@@ -1188,7 +1227,7 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   }
 
   if (type === "svg") {
-    props.svg = el.outerHTML;
+    props.svg = svgMarkup(el);
     // An SVG's own attributes carry its size when CSS does not.
     if (props.width === undefined) {
       const aw = px(el.getAttribute("width") ?? undefined);
