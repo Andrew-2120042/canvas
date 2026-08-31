@@ -24,6 +24,12 @@
 const CARRIED = [
   "display", "flex-direction", "flex-wrap", "justify-content", "align-items",
   "align-self", "flex-grow", "flex-shrink", "flex-basis", "gap", "row-gap",
+  // Grid alignment. `align-items` alone was carried, which is half of
+  // `place-items: center` — so a grid centred its contents vertically and
+  // left them at the start horizontally. On a 56px circle holding a 22px
+  // icon that is a 17px error, and it is why every icon in a round button
+  // sat against the left edge instead of in the middle.
+  "justify-items", "justify-self", "align-content", "place-content",
   "column-gap", "grid-template-columns", "grid-template-rows", "grid-column",
   "grid-row", "position", "left", "top", "right", "bottom", "z-index",
   "width", "height", "min-width", "min-height", "max-width", "max-height",
