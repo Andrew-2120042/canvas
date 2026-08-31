@@ -40,6 +40,36 @@
  * properties kept under their standard name, and behaviour that has no
  * appearance on a static canvas.
  */
+/**
+ * Properties a child takes from its parent unless it says otherwise.
+ *
+ * These are never dropped, however ordinary their value looks, and the reason
+ * is the node model rather than CSS: nothing inherits here. A text node that
+ * does not carry its own font-family renders in the canvas's UI font, not in
+ * the font the page was written in.
+ *
+ * The comparison below drops a value equal to a bare element of the same tag.
+ * That is right for a property an element sets for itself and wrong for one
+ * it inherits, because the reference element sits in the same document and
+ * inherits exactly the same value — so an inherited property always matches
+ * and is always discarded.
+ *
+ * A real page puts its typography on `body`. Every paragraph inherits it, the
+ * probe inherits it, and the result was that body text lost its typeface
+ * entirely while headings kept theirs — a heading names its own font, so it
+ * differs from the probe and survives. Text then measured in the wrong face,
+ * wrapped at different words, and moved every row beneath it.
+ */
+const ALWAYS_CARRIED = new Set([
+  "color", "font-family", "font-size", "font-weight", "font-style",
+  "font-stretch", "font-variant", "font-variant-numeric", "font-feature-settings",
+  "font-variation-settings", "line-height", "letter-spacing", "word-spacing",
+  "text-align", "text-indent", "text-transform", "text-decoration-line",
+  "white-space", "word-break", "overflow-wrap", "hyphens", "direction",
+  "list-style-type", "list-style-position", "font-optical-sizing",
+  "text-rendering", "-webkit-font-smoothing", "font-kerning",
+]);
+
 const NOT_CARRIED = new Set<string>([
   // Logical duplicates of physical properties that are carried already.
   "inline-size", "block-size", "min-inline-size", "min-block-size",
@@ -467,7 +497,10 @@ export async function inlineStylesheet(
       const prop = computed.item(i);
       if (NOT_CARRIED.has(prop)) continue;
       const value = computed.getPropertyValue(prop);
-      if (!value || value === reference[prop]) continue;
+      if (!value) continue;
+      // An inherited property is kept even when it matches the reference,
+      // because the reference inherited it too — see ALWAYS_CARRIED.
+      if (!ALWAYS_CARRIED.has(prop) && value === reference[prop]) continue;
       if (isDerived(prop, value, computed, el)) continue;
       extra += `${prop}:${value};`;
     }
