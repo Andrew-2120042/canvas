@@ -2,6 +2,7 @@ import { activeFile } from "../document/store";
 import {
   adoptedFontCss,
   materialisePseudo,
+  revealTransitioned,
   viewportHeightFor,
 } from "../document/html/resolveCss";
 import { renderVectors, settle } from "./screenshot";
@@ -362,6 +363,16 @@ export function registerCompareTools(): void {
       const tag = el.tagName.toLowerCase();
       if (tag === "style" || tag === "script" || el.hasAttribute("data-pseudo")) continue;
       materialisePseudo(el, fdoc.body);
+
+      // The conversion brings a mid-entrance element to rest, because a
+      // designer wants the design rather than the first frame of its
+      // animation. The source has to be read the same way or the measurement
+      // punishes the conversion for the one place it deliberately, and
+      // rightly, departs from the file.
+      const view2 = fdoc.defaultView ?? window;
+      const rest = revealTransitioned(view2.getComputedStyle(el));
+      if (rest.opacity !== undefined) el.style.opacity = rest.opacity;
+      if (rest.transform !== undefined) el.style.transform = rest.transform;
 
       // A page is rasterised a band at a time by shifting the markup up
       // inside a clipped window. Anything fixed ignores that shift — it is

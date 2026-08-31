@@ -63,6 +63,8 @@ export interface ParseResult {
     pseudoElements: number;
     /** Text nodes keeping formatted runs rather than flattening them. */
     formattedRuns: number;
+    /** Elements a transition said were mid-entrance, brought to rest. */
+    revealedFromTransition?: number;
     /** The page's own @font-face families, and which of them render. */
     fonts?: { declared: string[]; loaded: string[]; fellBack: string[] };
   };
@@ -1378,7 +1380,9 @@ export async function parseHtml(
   // fit-content button spanning its column, display:block not meaning flow.
   //
   // One authority. Mounting costs a layout pass; being wrong costs the design.
-  const { html: source, fonts } = await inlineStylesheet(html, containerWidth, basePath);
+  const { html: source, fonts, revealed } = await inlineStylesheet(
+    html, containerWidth, basePath,
+  );
 
   const doc = new DOMParser().parseFromString(
     `<div id="__root">${closeVoidClones(source)}</div>`,
@@ -1425,6 +1429,8 @@ export async function parseHtml(
       resolvedAtWidth: containerWidth,
       pseudoElements: tally.pseudo,
       formattedRuns: tally.runs,
+      // Elements a transition said were mid-entrance, brought to rest.
+      ...(revealed ? { revealedFromTransition: revealed } : {}),
       // Which of the page's own faces arrived. A family listed here but not
       // loaded is rendering as something else, and every measurement taken
       // of it is a measurement of the substitute.

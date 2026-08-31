@@ -27,10 +27,23 @@ import { BuildStatus } from "../canvas/BuildStatus";
  * visibly moved things around. Magnifying has no such problem, so everything
  * from 100% up is laid out at its true scale and rendered sharp.
  *
- * Below 100% a transform shrinks the last raster, which downsamples cleanly
- * and keeps the design exactly the shape it was drawn.
+ * Below 100% a transform was used instead, on the theory that shrinking a
+ * raster downsamples cleanly. It does not. Text rendered at full size and
+ * then scaled to a third is a third of a glyph's worth of pixels, and it
+ * reads exactly as it is — soft, grey, and washed out next to the same design
+ * laid out at that size, where the browser hints and rasterises every glyph
+ * for the size it will actually appear at.
+ *
+ * So the layout scale follows the zoom the whole way down now, and the
+ * transform is left doing what it is good at: absorbing the motion of a
+ * gesture, between one settle and the next.
+ *
+ * There is a floor. Below it a laid-out pixel is smaller than a device pixel,
+ * borders and hairlines round away to nothing, and re-laying-out buys nothing
+ * anybody can see — so the transform takes over again for the last stretch of
+ * zooming out, where a page is a thumbnail and detail is not the point.
  */
-const CRISP_FROM = 1;
+const CRISP_FROM = 0.2;
 /** Long enough that a wheel or pinch gesture reads as one continuous motion. */
 const SETTLE_MS = 140;
 

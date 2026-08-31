@@ -379,6 +379,47 @@ function hasOwnText(el: Element): boolean {
 }
 
 /**
+ * A value that is only waiting to change is not the design.
+ *
+ * Pages reveal themselves as you scroll: a section starts at `opacity: 0`,
+ * nudged down a little, with a transition on both, and script flips a class
+ * when it comes into view. Read as a static file that is exactly what it says
+ * — invisible — so a faithful conversion produced page after page of empty
+ * boxes. Correct, and useless: what the designer wants on the canvas is the
+ * design, not the first frame of its entrance.
+ *
+ * A transition is the page saying this value is temporary. So a transitioned
+ * opacity of zero comes in revealed, and a transform that is only an offset
+ * comes in at rest. Reported in the conversion summary rather than done
+ * quietly, because it is a judgement about intent and the caller should know
+ * it was made.
+ *
+ * Deliberately narrow. An element with no transition on the property is left
+ * exactly as it is — something hidden outright meant to be hidden.
+ */
+export function revealTransitioned(
+  computed: CSSStyleDeclaration,
+): { opacity?: string; transform?: string } {
+  const props = computed.getPropertyValue("transition-property");
+  if (!props) return {};
+  const list = props.split(",").map((p) => p.trim());
+  const covers = (name: string): boolean =>
+    list.includes("all") || list.includes(name);
+
+  const out: { opacity?: string; transform?: string } = {};
+  if (covers("opacity") && parseFloat(computed.getPropertyValue("opacity")) === 0) {
+    out.opacity = "1";
+  }
+  if (covers("transform")) {
+    const t = computed.getPropertyValue("transform");
+    // Only an offset or a scale — something the entrance animates away. A
+    // rotation is far more likely to be part of the design itself.
+    if (t && t !== "none" && /^matrix\(1, 0, 0, 1, /.test(t)) out.transform = "none";
+  }
+  return out;
+}
+
+/**
  * A viewport of the artboard's own size, to resolve the page inside.
  *
  * The resolver used to mount markup in a hidden div, which is wrong in a way
@@ -550,7 +591,11 @@ export async function inlineStylesheet(
   width: number,
   /** The directory the markup came from, so its own files can be found. */
   basePath?: string,
-): Promise<{ html: string; fonts: { families: string[]; loaded: string[] } }> {
+): Promise<{
+  html: string;
+  fonts: { families: string[]; loaded: string[] };
+  revealed: number;
+}> {
   const { doc } = await getHost(width);
   const view = doc.defaultView ?? window;
   const root = doc.body;
@@ -583,6 +628,7 @@ export async function inlineStylesheet(
     materialisePseudo(el, root);
   }
 
+  let revealedCount = 0;
   const elements = Array.from(root.querySelectorAll<HTMLElement>("*"));
   for (const el of elements) {
     const tag = el.tagName.toLowerCase();
@@ -610,6 +656,14 @@ export async function inlineStylesheet(
       if (isDerived(prop, value, computed, el)) continue;
       extra += `${prop}:${value};`;
     }
+    // Values a transition says are temporary come in at their resting state.
+    const revealed = revealTransitioned(computed);
+    if (revealed.opacity !== undefined) {
+      extra += `opacity:${revealed.opacity};`;
+      revealedCount += 1;
+    }
+    if (revealed.transform !== undefined) extra += `transform:${revealed.transform};`;
+
     // The element's own inline style goes last so it still wins, exactly as
     // the cascade had it.
     el.setAttribute("style", extra + own);
@@ -621,5 +675,5 @@ export async function inlineStylesheet(
 
   const out = restoreImageLoads(root.innerHTML, deferred.urls);
   root.innerHTML = "";
-  return { html: out, fonts };
+  return { html: out, fonts, revealed: revealedCount };
 }
