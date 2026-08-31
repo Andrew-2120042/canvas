@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { activeFile, useDoc } from "../document/store";
 import { useUi } from "../state/ui";
+import { useViewport } from "../state/viewport";
+import { worldRect } from "../document/store";
 import type { SceneNode } from "../document/types";
 
 const NUDGE = 1;
@@ -50,6 +52,36 @@ export function useKeyboard() {
       if ((e.metaKey || e.ctrlKey) && e.key === ".") {
         e.preventDefault();
         useUi.getState().togglePanels();
+        return;
+      }
+
+      // Zoom-to-fit and actual size. The two navigation moves a canvas cannot
+      // do without: get me back to the whole thing, and get me back to real
+      // size. Shift-1 frames the selection instead of the page, which is what
+      // you want after hunting for one node in a long document.
+      if ((e.metaKey || e.ctrlKey) && (e.key === "1" || e.key === "0")) {
+        e.preventDefault();
+        const el = document.querySelector(".canvas-region") ?? document.body;
+        const view = { width: el.clientWidth, height: el.clientHeight };
+        if (e.key === "0") {
+          useViewport.getState().actualSize(view);
+          return;
+        }
+        const f = activeFile();
+        const page = f.doc.pages[f.currentPageId];
+        const ids = e.shiftKey && f.selection.length ? f.selection : page.children;
+        const rects = ids
+          .map((id) => worldRect(f.doc, id))
+          .filter((r): r is NonNullable<typeof r> => !!r);
+        if (rects.length === 0) return;
+        const minX = Math.min(...rects.map((r) => r.x));
+        const minY = Math.min(...rects.map((r) => r.y));
+        const maxX = Math.max(...rects.map((r) => r.x + r.width));
+        const maxY = Math.max(...rects.map((r) => r.y + r.height));
+        useViewport.getState().fit(
+          { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
+          view,
+        );
         return;
       }
 

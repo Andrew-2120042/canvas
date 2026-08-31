@@ -23,6 +23,20 @@ interface ViewportStore extends Viewport {
   zoomTo: (zoom: number, screenX: number, screenY: number) => void;
   /** Reset to 1:1 with the world origin at the viewport's top-left inset. */
   reset: (inset?: number) => void;
+  /**
+   * Frame a world rect in the viewport.
+   *
+   * Zoom-to-fit is how a user gets back to a page they have zoomed into and
+   * lost — the one navigation move a canvas cannot do without, and the only
+   * part of 1.2 that was never built.
+   */
+  fit: (
+    rect: { x: number; y: number; width: number; height: number },
+    view: { width: number; height: number },
+    padding?: number,
+  ) => void;
+  /** Jump to 1:1 about the centre of the viewport, keeping it in place. */
+  actualSize: (view: { width: number; height: number }) => void;
 }
 
 const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
@@ -45,6 +59,33 @@ export const useViewport = create<ViewportStore>((set) => ({
         x: screenX - (screenX - s.x) * k,
         y: screenY - (screenY - s.y) * k,
       };
+    }),
+
+  fit: (rect, view, padding = 64) =>
+    set(() => {
+      const w = Math.max(1, rect.width);
+      const h = Math.max(1, rect.height);
+      const usableW = Math.max(1, view.width - padding * 2);
+      const usableH = Math.max(1, view.height - padding * 2);
+      // Never zoom past 1:1 when framing: blowing a small selection up to
+      // fill the screen is disorienting, and the user asked to see it whole,
+      // not to see it enormous.
+      const zoom = clampZoom(Math.min(usableW / w, usableH / h, 1));
+      return {
+        zoom,
+        x: view.width / 2 - (rect.x + w / 2) * zoom,
+        y: view.height / 2 - (rect.y + h / 2) * zoom,
+      };
+    }),
+
+  actualSize: (view) =>
+    set((s) => {
+      const k = 1 / s.zoom;
+      const cx = view.width / 2;
+      const cy = view.height / 2;
+      // Anchored on the middle of the viewport, so whatever the user was
+      // looking at is still what they are looking at.
+      return { zoom: 1, x: cx - (cx - s.x) * k, y: cy - (cy - s.y) * k };
     }),
 
   zoomTo: (target, screenX, screenY) =>
