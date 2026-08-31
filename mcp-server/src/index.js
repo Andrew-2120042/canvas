@@ -345,6 +345,8 @@ function buildServer() {
       // base64 in a text block that nothing can display.
       if (result && result.debug) {
         const { debug, ...rest } = result;
+        // Anything the app said about the band travels with the images.
+        if (debug.note) rest.debugNote = debug.note;
         return {
           content: [
             { type: "text", text: JSON.stringify(rest, null, 1) },

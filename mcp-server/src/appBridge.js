@@ -5,6 +5,19 @@ import { randomUUID } from "node:crypto";
 const CALL_TIMEOUT_MS = 10_000;
 
 /**
+ * Longer for the operations that legitimately take seconds.
+ *
+ * Most calls read or write state and answer at once, so a short timeout is
+ * right for them: a hung app should be reported rather than waited on. But a
+ * fidelity comparison rasterises a whole page twice, a band at a time, and on
+ * a long document that is genuinely several seconds of work. Timing it out
+ * reports a broken app when the app is doing exactly what was asked, and
+ * sends whoever reads it looking for a fault that is not there.
+ */
+const SLOW_OPS = new Set(["compare_to_source", "get_screenshot"]);
+const SLOW_TIMEOUT_MS = 120_000;
+
+/**
  * Link between the MCP server and the running canvas app.
  *
  * The canvas lives in the app's webview, and every mutation must go through
@@ -67,7 +80,7 @@ export class AppBridge {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`the canvas app did not answer "${op}" in time`));
-      }, CALL_TIMEOUT_MS);
+      }, SLOW_OPS.has(op) ? SLOW_TIMEOUT_MS : CALL_TIMEOUT_MS);
       this.pending.set(id, { resolve, reject, timer });
       this.socket.send(JSON.stringify({ id, op, args }));
     });

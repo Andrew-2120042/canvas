@@ -42,8 +42,25 @@ const DIFF_MAX_SIDE = 900;
 const CHANNEL_TOLERANCE = 28;
 /** Grid the report is divided into, so a difference has a location. */
 const GRID_COLS = 8;
-/** How much of the page is rasterised at once. */
-const BAND_HEIGHT = 1000;
+/**
+ * How much of the page is rasterised at once.
+ *
+ * Taller is better, and by a lot. The page's own typefaces have to travel
+ * inside every raster — an SVG rendered as an image is an isolated document
+ * and cannot reach the fonts the app has loaded — and on a real page that is
+ * roughly 300KB of base64 which the browser decodes afresh each time. At a
+ * thousand pixels a band this page took eight rasters per side and over two
+ * minutes, and wedged the window while it worked. At four thousand it takes
+ * two, and 2.4 seconds.
+ *
+ * Not unlimited: past some height the rasteriser returns nothing, with no
+ * error and no clue which limit was reached. So this is a starting point that
+ * halves on failure — see `rasteriseBands` — which keeps a tall page fast and
+ * an unusually large one merely slower rather than broken.
+ */
+const BAND_HEIGHT = 4000;
+/** Never subdivide past this; below it something else is wrong. */
+const MIN_BAND_HEIGHT = 500;
 
 interface Region {
   /** In the source page's own coordinates. */
@@ -123,7 +140,83 @@ function neutralisePhotos(live: Element, target: Element): void {
  * difference. Measured across the hero, the source read as alpha 0.90 where
  * it had declared 0.76.
  */
+
+/**
+ * Measure both sides with the same glyph metrics.
+ *
+ * The canvas deliberately renders text with geometric precision and no
+ * optical sizing, so that a string occupies the same proportional width at
+ * every zoom — without it, auto-sized text changes width as the canvas scales
+ * and the layout shifts under the user. A page in a plain browser does not do
+ * that.
+ *
+ * So every glyph differs between the two sides by design, and no amount of
+ * conversion work will ever close it. Leaving it in the measurement adds a
+ * constant, page-wide difference that masks the defects worth finding. The
+ * source side is given the same two rules, and the number then answers the
+ * question that can actually be acted on: given how this canvas draws text,
+ * did the design convert correctly?
+ */
+const MATCH_TEXT_METRICS =
+  "*{text-rendering:geometricPrecision;font-optical-sizing:none}";
+
 const SUPPRESS_PSEUDO = "*::before,*::after{content:none !important}";
+
+/**
+ * The page's stylesheet without its embedded fonts.
+ *
+ * A real page inlines its typefaces as base64, and on this one that is 93% of
+ * a 325KB stylesheet. The comparison was sending all of it twice per band —
+ * once as the adopted faces, once inside the page's own CSS — and the
+ * rasteriser, which refuses a payload past a size it does not announce, gave
+ * up somewhere in the middle. The casualty was the last and smallest face
+ * declared, so headings rendered in the right font and body text fell back to
+ * a serif, which then wrapped differently and moved everything below it.
+ *
+ * Every one of those looks like a conversion failure and none of them is.
+ *
+ * The faces are registered once from the adopted set, which is the same set
+ * the canvas renders with — being the same copy is what makes the two sides
+ * comparable at all.
+ */
+function withoutFontFaces(css: string): string {
+  return css.replace(/@font-face\s*\{[^}]*\}/gi, "");
+}
+
+/**
+ * Properties a child takes from its parent unless it says otherwise.
+ *
+ * The source is serialised out of its document and re-parented into the
+ * comparison's own wrapper, which drops everything it was inheriting from
+ * `body` — and a real page puts its typography there. On this one that is a
+ * single declaration, `font-family: Onest`, and losing it meant every word of
+ * body text on the source side rendered in a fallback serif, wrapped at
+ * different points, and shifted the rows beneath it. Every one of those looks
+ * like a conversion defect and none of them is.
+ *
+ * Only the inherited properties are carried across. `body` also has a layout
+ * of its own — this page makes it a grid to animate its menu — and importing
+ * that would collapse the entire document into one row.
+ */
+const INHERITED = [
+  "color", "font-family", "font-size", "font-weight", "font-style",
+  "font-stretch", "font-variant", "line-height", "letter-spacing",
+  "word-spacing", "text-align", "text-indent", "text-transform",
+  "white-space", "word-break", "overflow-wrap", "direction", "visibility",
+  "list-style-type", "list-style-position", "-webkit-font-smoothing",
+] as const;
+
+/** What the page's body passes down, as an inline style for the wrapper. */
+function inheritedFrom(el: HTMLElement): string {
+  const view = el.ownerDocument.defaultView ?? window;
+  const computed = view.getComputedStyle(el);
+  let out = "";
+  for (const prop of INHERITED) {
+    const value = computed.getPropertyValue(prop);
+    if (value) out += `${prop}:${value};`;
+  }
+  return out;
+}
 
 /** One rasterised side as a PNG, for looking at rather than measuring. */
 async function toPng(data: ImageData): Promise<string> {
@@ -254,6 +347,7 @@ export function registerCompareTools(): void {
       }
     }
     neutralisePhotos(fdoc.body, fdoc.body);
+    const bodyStyle = inheritedFrom(fdoc.body);
     const sourceMarkup = new XMLSerializer()
       .serializeToString(fdoc.body)
       .replace(/^<body[^>]*>/, "")
@@ -320,9 +414,9 @@ export function registerCompareTools(): void {
       }
     };
 
-    const band = (markup: string, top: number, height: number): string =>
+    const band = (markup: string, top: number, height: number, cls = ""): string =>
       `<div style="position:relative;width:${width}px;height:${height}px;overflow:hidden">` +
-      `<div style="position:absolute;left:0;top:${-top}px;width:${width}px">` +
+      `<div class="${cls}" style="position:absolute;left:0;top:${-top}px;width:${width}px">` +
       markup +
       `</div></div>`;
 
@@ -338,22 +432,49 @@ export function registerCompareTools(): void {
       : Math.floor(Number(args.debugBandAt) / BAND_HEIGHT) * BAND_HEIGHT;
     const debug: Record<string, string> = {};
 
-    for (let top = 0; top < common; top += BAND_HEIGHT) {
-      const height = Math.min(BAND_HEIGHT, common - top);
-      const sourceBand = band(sourceMarkup, top, height);
+    // Halved on failure rather than given up on: the rasteriser's ceiling is
+    // undocumented and depends on the page, so the only way to find it is to
+    // ask. A page that needs smaller bands is slower; it still gets an answer.
+    let bandHeight = BAND_HEIGHT;
+
+    for (let top = 0; top < common; top += bandHeight) {
+      const height = Math.min(bandHeight, common - top);
+      const sourceBand = band(sourceMarkup, top, height, "cmp-body");
       const canvasBand = band(canvasMarkup, top, height);
       // The page's own faces go to the source side explicitly: the canvas gets
       // them with the app stylesheet, and without this the two sides would be
       // set in different fonts and every word would register as a difference.
-      const a = await attempt(
-        "source", sourceBand, false, height,
-        `${adoptedFontCss()}\n${sourceCss}\n${SUPPRESS_PSEUDO}`,
-      );
-      const b = await attempt("canvas", canvasBand, true, height);
+      const css =
+        `${adoptedFontCss()}\n${withoutFontFaces(sourceCss)}\n` +
+        `.cmp-body{${bodyStyle}}\n${SUPPRESS_PSEUDO}\n${MATCH_TEXT_METRICS}`;
+      let a: ImageData;
+      let b: ImageData;
+      try {
+        a = await attempt("source", sourceBand, false, height, css);
+        b = await attempt("canvas", canvasBand, true, height);
+      } catch (err) {
+        if (bandHeight <= MIN_BAND_HEIGHT) throw err;
+        // Too tall for this page. Start again in smaller pieces rather than
+        // reporting a failure the caller can do nothing about.
+        bandHeight = Math.max(MIN_BAND_HEIGHT, Math.floor(bandHeight / 2));
+        top = -bandHeight;
+        cells.clear();
+        differing = 0;
+        total = 0;
+        continue;
+      }
 
       if (wantBand === top) {
         debug.source = await toPng(a);
         debug.canvas = await toPng(b);
+        const css = `${adoptedFontCss()}\n${withoutFontFaces(sourceCss)}`;
+        debug.note =
+          `sourceCss ${Math.round(sourceCss.length / 1024)}KB, ` +
+          `adopted ${Math.round(adoptedFontCss().length / 1024)}KB, ` +
+          `sent ${Math.round(css.length / 1024)}KB, ` +
+          `faces sent [${[...css.matchAll(/font-family:\s*['"]?([A-Za-z ]+)/g)]
+            .map((m) => m[1]).join("|")}], ` +
+          `markup ${Math.round(sourceBand.length / 1024)}KB`;
       }
 
       const w = Math.min(a.width, b.width);
