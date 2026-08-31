@@ -100,39 +100,44 @@ export function CanvasRegion() {
   /**
    * The artboards worth laying out.
    *
-   * A top-level board's rectangle is in the document already — nothing needs
-   * measuring to know where it is — so deciding this costs one comparison per
-   * board and saves the browser laying out everything inside the ones nobody
-   * is looking at.
+   * A top-level board's rectangle is in the document already, so deciding
+   * this costs one comparison each and saves the browser laying out
+   * everything inside the boards nobody is looking at.
    *
-   * The margin is deliberately loose. Culling exactly at the edge would mean
-   * a board arriving in the same frame it becomes visible, and the layout it
-   * needs then lands in the middle of the gesture that revealed it — the
-   * stutter this exists to remove, moved rather than fixed. A screen of slack
-   * on each side means the work is done before it is wanted.
+   * Worked in screen space, using the same world-to-screen formula the
+   * selection overlay uses — `world * zoom + pan` — because that one is known
+   * to be right: selection boxes land on their nodes at every zoom. An
+   * equivalent calculation in world units is easy to get subtly wrong, and
+   * getting it wrong here means content disappearing while someone is looking
+   * straight at it, which is the worst failure this could have.
+   *
+   * The margin is a full screen on every side. Culling at the edge would have
+   * a board arriving in the same frame it becomes visible, so its layout would
+   * land in the middle of the gesture that revealed it — the stutter this
+   * exists to remove, moved rather than fixed.
    */
   const renderAll = useRenderAll((s) => s.all);
   const visibleChildren = useMemo(() => {
     if (renderAll) return page.children;
     const el = ref.current;
     if (!el) return page.children;
-    const vw = el.clientWidth / zoom;
-    const vh = el.clientHeight / zoom;
-    const left = -x / zoom - vw;
-    const top = -y / zoom - vh;
-    const right = left + vw * 3;
-    const bottom = top + vh * 3;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (!w || !h) return page.children;
+
     const kept = page.children.filter((id: string) => {
       const n = nodes[id];
       if (!n) return false;
-      return (
-        n.x < right && n.x + n.width > left &&
-        n.y < bottom && n.y + n.height > top
-      );
+      const left = n.x * zoom + x;
+      const top = n.y * zoom + y;
+      const right = left + n.width * zoom;
+      const bottom = top + n.height * zoom;
+      return right > -w && left < w * 2 && bottom > -h && top < h * 2;
     });
-    // Never render nothing: an empty canvas reads as lost work rather than as
-    // a viewport parked in empty space.
-    return kept.length ? kept : page.children.slice(0, 1);
+    // Never render nothing. An empty canvas reads as lost work rather than as
+    // a viewport parked in empty space, and a bug in the arithmetic above
+    // should cost a frame of extra layout rather than the user's document.
+    return kept.length ? kept : page.children;
   }, [renderAll, page.children, nodes, x, y, zoom]);
 
 
