@@ -109,6 +109,22 @@ function neutralisePhotos(live: Element, target: Element): void {
   }
 }
 
+/**
+ * Stop the source drawing its pseudo-elements a second time.
+ *
+ * They have already been materialised into real children, so they are in the
+ * serialised markup — but the rules that created them are still in the
+ * stylesheet that goes to the rasteriser, and the browser dutifully draws
+ * them again on top of themselves.
+ *
+ * For a scrim that is not a subtle error: an alpha of 0.76 composited over
+ * itself is 0.94, and the source came out substantially darker than the page
+ * it was standing in for. Every comparison then blamed the canvas for the
+ * difference. Measured across the hero, the source read as alpha 0.90 where
+ * it had declared 0.76.
+ */
+const SUPPRESS_PSEUDO = "*::before,*::after{content:none !important}";
+
 /** One rasterised side as a PNG, for looking at rather than measuring. */
 async function toPng(data: ImageData): Promise<string> {
   const canvas = document.createElement("canvas");
@@ -314,7 +330,8 @@ export function registerCompareTools(): void {
       // them with the app stylesheet, and without this the two sides would be
       // set in different fonts and every word would register as a difference.
       const a = await attempt(
-        "source", sourceBand, false, height, `${adoptedFontCss()}\n${sourceCss}`,
+        "source", sourceBand, false, height,
+        `${adoptedFontCss()}\n${sourceCss}\n${SUPPRESS_PSEUDO}`,
       );
       const b = await attempt("canvas", canvasBand, true, height);
 
