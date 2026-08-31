@@ -91,7 +91,7 @@ function countTree(trees: Array<{ node: SceneNode }>): number {
 }
 
 export function registerHtmlTool(): void {
-  registerTool("write_html", (args) => {
+  registerTool("write_html", async (args) => {
     const html = String(args.html ?? "");
     if (!html.trim()) throw new Error("html is required");
 
@@ -130,7 +130,7 @@ export function registerHtmlTool(): void {
       return width || 1440;
     };
     const container = pageWidth(targetId);
-    const { nodes: parsed, ignored, conversion } = parseHtml(html, container);
+    const { nodes: parsed, ignored, conversion } = await parseHtml(html, container);
     if (parsed.length === 0) throw new Error("no elements found in the html");
 
     const flat: Array<{ node: SceneNode; children: NodeId[] }> = [];

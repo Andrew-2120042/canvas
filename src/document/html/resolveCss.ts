@@ -47,6 +47,7 @@ const CARRIED = [
   // a silent one. box-sizing decides whether padding is inside the width,
   // which is the difference between a 280px card and a 320px one.
   "aspect-ratio", "box-sizing", "object-position", "order", "vertical-align",
+  "isolation", "z-index",
   "text-indent", "word-break", "overflow-wrap", "text-overflow",
   "border-right-style", "border-bottom-style", "border-left-style",
   // Gradient text: the fill is transparent and the gradient is clipped to
@@ -74,7 +75,7 @@ const CARRIED = [
  * was. Done at this stage so nothing later needs to know pseudo-elements
  * exist.
  */
-function materialisePseudo(el: HTMLElement, root: HTMLElement): void {
+export function materialisePseudo(el: HTMLElement, root: HTMLElement): void {
   for (const which of ["::before", "::after"] as const) {
     const style = getComputedStyle(el, which);
     const content = style.getPropertyValue("content");
@@ -97,10 +98,130 @@ function materialisePseudo(el: HTMLElement, root: HTMLElement): void {
     const literal = /^"(.*)"$/s.exec(content);
     if (literal && literal[1]) node.textContent = literal[1];
 
+    // A pseudo-element with a negative z-index paints behind its originating
+    // element's own background and no further, because the element it belongs
+    // to bounds it. A real child has no such guarantee: it escapes to behind
+    // whichever ancestor happens to establish the nearest stacking context,
+    // which here is the artboard — so the hero's scrim slid behind a white
+    // page and disappeared, taking the legibility of every white word on top
+    // of it with it.
+    //
+    // `isolation: isolate` establishes a stacking context and does nothing
+    // else, which is precisely the containment the pseudo-element had by
+    // definition.
+    const zIndex = parseFloat(style.getPropertyValue("z-index"));
+    if (Number.isFinite(zIndex) && zIndex < 0) {
+      el.style.isolation = "isolate";
+    }
+
     if (which === "::before") el.insertBefore(node, el.firstChild);
     else el.appendChild(node);
   }
   void root;
+}
+
+/**
+ * The fonts a page brings with it.
+ *
+ * Everything else in this file works by resolving a rule onto an element and
+ * writing it inline, then discarding the stylesheet. `@font-face` cannot work
+ * that way: it is not a property of any element, it is a declaration to the
+ * document that a family exists and where to fetch it. Removing the
+ * stylesheet removed it, so a converted page's own fonts never loaded and
+ * every text node quietly rendered in a fallback.
+ *
+ * That is not a cosmetic loss. A fallback family has different metrics, so
+ * text wraps at a different word, so a paragraph is a different height, so
+ * everything below it moves. One unloaded font shifts a whole page and
+ * presents as dozens of small layout errors — and it is invisible in a
+ * screenshot, because the text is all there and looks fine.
+ *
+ * So the faces are lifted out of the sheet before it is discarded and
+ * registered with the real document, where they stay for the session. Keyed
+ * by their own text so the same page converted twice does not register
+ * anything twice.
+ */
+const registered = new Set<string>();
+
+/**
+ * Every face adopted so far, as CSS.
+ *
+ * The comparison rasterises both sides separately, and only one of them
+ * carries the app's stylesheet — so the canvas side had the page's fonts and
+ * the source side fell back to a serif. Every text pixel then differed, on
+ * every page, for a reason that has nothing to do with the conversion.
+ */
+export function adoptedFontCss(): string {
+  return [...registered].join("\n");
+}
+
+/** The @font-face blocks in a stylesheet, as written. */
+function fontFaceRules(css: string): string[] {
+  const out: string[] = [];
+  const re = /@font-face\s*\{/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(css)) !== null) {
+    // Brace-matched rather than regex-matched: a face carries a src with
+    // url(...) in it, and a lazy match to the first } truncates mid-URL.
+    let depth = 1;
+    let i = match.index + match[0].length;
+    while (i < css.length && depth > 0) {
+      if (css[i] === "{") depth += 1;
+      else if (css[i] === "}") depth -= 1;
+      i += 1;
+    }
+    if (depth === 0) out.push(css.slice(match.index, i));
+  }
+  return out;
+}
+
+/** The family a face declares, for reporting and for loading. */
+function familyOf(rule: string): string | null {
+  const m = /font-family\s*:\s*(['"]?)([^;'"]+)\1/i.exec(rule);
+  return m ? m[2].trim() : null;
+}
+
+/**
+ * Register a page's faces with the document, and wait for them to load.
+ *
+ * The wait is the point. Reading computed styles before the font arrives
+ * measures the fallback, which is the whole failure this is here to prevent —
+ * so the caller has to await this before the layout pass, not alongside it.
+ */
+export async function adoptFonts(css: string): Promise<{
+  families: string[];
+  loaded: string[];
+}> {
+  const rules = fontFaceRules(css);
+  const families = [...new Set(rules.map(familyOf).filter((f): f is string => !!f))];
+  if (rules.length === 0) return { families: [], loaded: [] };
+
+  const fresh = rules.filter((rule) => !registered.has(rule));
+  if (fresh.length) {
+    const tag = document.createElement("style");
+    tag.setAttribute("data-adopted-fonts", "");
+    tag.textContent = fresh.join("\n");
+    document.head.appendChild(tag);
+    for (const rule of fresh) registered.add(rule);
+  }
+
+  // A face is only fetched when something asks for it, so each family is
+  // asked for explicitly. A face that fails is not fatal — the page still
+  // converts, and the report says which ones did not arrive.
+  const loaded: string[] = [];
+  await Promise.all(
+    families.map(async (family) => {
+      try {
+        await document.fonts.load(`400 16px "${family}"`);
+        await document.fonts.load(`700 16px "${family}"`);
+        await document.fonts.load(`italic 400 16px "${family}"`);
+        if (document.fonts.check(`16px "${family}"`)) loaded.push(family);
+      } catch {
+        // Reported as not loaded, below.
+      }
+    }),
+  );
+  return { families, loaded };
 }
 
 /** One hidden host, reused, so a build does not churn the document. */
@@ -154,10 +275,22 @@ export function hasStylesheet(html: string): boolean {
  * `width` is the box the markup will finally live in, so that percentages and
  * flex resolve against the same width they will have on the canvas.
  */
-export function inlineStylesheet(html: string, width: number): string {
+export async function inlineStylesheet(
+  html: string,
+  width: number,
+): Promise<{ html: string; fonts: { families: string[]; loaded: string[] } }> {
   const root = getHost();
   root.style.width = `${Math.max(1, Math.round(width))}px`;
   root.innerHTML = html;
+
+  // The page's own faces, registered and loaded before anything is measured.
+  // Awaited rather than fired off: every width and height read below is a
+  // measurement, and measuring before the font arrives measures the fallback
+  // — which is precisely the corruption this is here to avoid.
+  const sheets = Array.from(root.querySelectorAll("style"))
+    .map((tag) => tag.textContent ?? "")
+    .join("\n");
+  const fonts = await adoptFonts(sheets);
 
   // Force layout once, so every computed value below is resolved.
   void root.offsetWidth;
@@ -198,5 +331,5 @@ export function inlineStylesheet(html: string, width: number): string {
 
   const out = root.innerHTML;
   root.innerHTML = "";
-  return out;
+  return { html: out, fonts };
 }

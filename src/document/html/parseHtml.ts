@@ -63,6 +63,8 @@ export interface ParseResult {
     pseudoElements: number;
     /** Text nodes keeping formatted runs rather than flattening them. */
     formattedRuns: number;
+    /** The page's own @font-face families, and which of them render. */
+    fonts?: { declared: string[]; loaded: string[]; fellBack: string[] };
   };
 }
 
@@ -999,8 +1001,25 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   if (box && box.trim() !== "border-box") unmapped.add(`box-sizing: ${box.trim()}`);
 
   // --- presentation ------------------------------------------------------
-  const bg = style.get("background") ?? style.get("background-color")
-    ?? style.get("background-image");
+  // Colour and image are two layers, not two spellings of one property, and
+  // the image is painted over the colour. Reading them in preference order
+  // meant a transparent `background-color` — which every element has once the
+  // cascade is resolved onto it — beat a real `background-image`, so every
+  // gradient in the document was discarded. That is how the hero's scrim
+  // vanished: the one box whose entire job is a gradient came through with no
+  // gradient and a transparent fill.
+  //
+  // Combined back into the shorthand they came from, so one parser reads them
+  // and the layer order is the one CSS defines.
+  const bgShorthand = style.get("background");
+  const bgColour = style.get("background-color");
+  const bgImage = style.get("background-image");
+  const bg = bgShorthand
+    ?? (bgImage && bgImage.trim() !== "none"
+      ? bgColour && !/^(transparent|rgba\(0,\s*0,\s*0,\s*0\))$/i.test(bgColour.trim())
+        ? `${bgColour} ${bgImage}`
+        : bgImage
+      : bgColour);
   if (bg && /^(inherit|initial|unset|revert|currentcolor)$/i.test(bg.trim())) {
     unmapped.add(`background: ${bg.trim()}`);
     props.fill = "transparent";
@@ -1150,8 +1169,20 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
     } else if (ws) unmapped.add(`white-space: ${ws}`);
     if (props.fontSize === undefined && /^h1$/.test(tag)) props.fontSize = 32;
   } else {
+    // `color` is the colour of words, not of the box. On a frame it was being
+    // written to `fill`, which is the background — so every container painted
+    // itself in its own text colour. That was survivable while only inline
+    // styles were read, because a hand-written div rarely sets `color` and
+    // nothing else. Once the cascade is resolved onto every element, every
+    // element has a `color`, and the result is a page of solid rectangles: a
+    // nav whose links became grey slabs, and a hero that set `color: white`
+    // and painted itself white over its own photograph, taking the white
+    // headline with it.
+    //
+    // It passes through as CSS instead, where it means what it means — the
+    // colour any text inside it inherits, including a formatted run.
     const colour = style.get("color");
-    if (colour && !bg) props.fill = colour;
+    if (colour) passthrough.color = colour;
   }
 
   if (type === "svg") {
@@ -1244,7 +1275,10 @@ function closeVoidClones(html: string): string {
   return html.replace(/<x-clone\b([^>]*?)\/>/gi, "<x-clone$1></x-clone>");
 }
 
-export function parseHtml(html: string, containerWidth = 1440): ParseResult {
+export async function parseHtml(
+  html: string,
+  containerWidth = 1440,
+): Promise<ParseResult> {
   // Every fragment goes through the browser, not just the ones carrying a
   // stylesheet. Resolving only those meant two implementations of what markup
   // means — the browser's, and a set of heuristics here for everything else —
@@ -1254,7 +1288,7 @@ export function parseHtml(html: string, containerWidth = 1440): ParseResult {
   // fit-content button spanning its column, display:block not meaning flow.
   //
   // One authority. Mounting costs a layout pass; being wrong costs the design.
-  const source = inlineStylesheet(html, containerWidth);
+  const { html: source, fonts } = await inlineStylesheet(html, containerWidth);
 
   const doc = new DOMParser().parseFromString(
     `<div id="__root">${closeVoidClones(source)}</div>`,
@@ -1269,7 +1303,11 @@ export function parseHtml(html: string, containerWidth = 1440): ParseResult {
     return {
       nodes: [],
       ignored: [],
-      conversion: { resolvedAtWidth: containerWidth, pseudoElements: 0, formattedRuns: 0 },
+      conversion: {
+        resolvedAtWidth: containerWidth,
+        pseudoElements: 0,
+        formattedRuns: 0,
+      },
     };
   }
 
@@ -1297,6 +1335,16 @@ export function parseHtml(html: string, containerWidth = 1440): ParseResult {
       resolvedAtWidth: containerWidth,
       pseudoElements: tally.pseudo,
       formattedRuns: tally.runs,
+      // Which of the page's own faces arrived. A family listed here but not
+      // loaded is rendering as something else, and every measurement taken
+      // of it is a measurement of the substitute.
+      fonts: fonts.families.length
+        ? {
+            declared: fonts.families,
+            loaded: fonts.loaded,
+            fellBack: fonts.families.filter((f) => !fonts.loaded.includes(f)),
+          }
+        : undefined,
     },
   };
 }

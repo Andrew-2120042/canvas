@@ -322,6 +322,8 @@ function buildServer() {
           .describe("The artboard holding the reproduction."),
         sourcePath: z.string()
           .describe("Absolute path to the source .html file. Read by the server."),
+        debugBandAt: z.number().optional()
+          .describe("A y coordinate. Returns both rasterised sides of the band containing it, as PNGs, so a disagreement can be looked at rather than guessed at. Use it when a region reports a large difference and the reason is not obvious."),
       },
     },
     async (args) => {
@@ -334,10 +336,24 @@ function buildServer() {
         throw new Error(`could not read "${path}": ${err.message}`);
       }
       sourceHtml = await resolveRelativeRefs(sourceHtml, dirname(path));
-      return text(await bridge.call("compare_to_source", {
+      const result = await bridge.call("compare_to_source", {
         nodeId: args.nodeId,
         sourceHtml,
-      }));
+        debugBandAt: args.debugBandAt,
+      });
+      // The debug rasters are images, and returning them as JSON would be
+      // base64 in a text block that nothing can display.
+      if (result && result.debug) {
+        const { debug, ...rest } = result;
+        return {
+          content: [
+            { type: "text", text: JSON.stringify(rest, null, 1) },
+            { type: "image", data: debug.source, mimeType: "image/png" },
+            { type: "image", data: debug.canvas, mimeType: "image/png" },
+          ],
+        };
+      }
+      return text(result);
     },
   );
 

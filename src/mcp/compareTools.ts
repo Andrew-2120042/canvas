@@ -1,4 +1,5 @@
 import { activeFile } from "../document/store";
+import { adoptedFontCss, materialisePseudo } from "../document/html/resolveCss";
 import { renderVectors, settle } from "./screenshot";
 import { registerTool } from "./bridge";
 
@@ -108,6 +109,15 @@ function neutralisePhotos(live: Element, target: Element): void {
   }
 }
 
+/** One rasterised side as a PNG, for looking at rather than measuring. */
+async function toPng(data: ImageData): Promise<string> {
+  const canvas = document.createElement("canvas");
+  canvas.width = data.width;
+  canvas.height = data.height;
+  canvas.getContext("2d")?.putImageData(data, 0, 0);
+  return canvas.toDataURL("image/png").split(",")[1];
+}
+
 /** Pixels of one rasterised side, at the comparison size. */
 async function rasterise(
   html: string,
@@ -200,6 +210,17 @@ export function registerCompareTools(): void {
       1,
       Math.round(fdoc.documentElement.scrollHeight),
     );
+    // The source's pseudo-elements have to become real too, or the two sides
+    // are not comparable: the canvas has them as nodes, and XMLSerializer
+    // cannot serialise a ::after — so the source would be rasterised without
+    // the scrim the canvas is being marked against. The comparison would then
+    // report a large difference in exactly the region where the conversion
+    // had succeeded.
+    for (const el of Array.from(fdoc.body.querySelectorAll<HTMLElement>("*"))) {
+      const tag = el.tagName.toLowerCase();
+      if (tag === "style" || tag === "script" || el.hasAttribute("data-pseudo")) continue;
+      materialisePseudo(el, fdoc.body);
+    }
     neutralisePhotos(fdoc.body, fdoc.body);
     const sourceMarkup = new XMLSerializer()
       .serializeToString(fdoc.body)
@@ -223,6 +244,21 @@ export function registerCompareTools(): void {
     const clone = el.cloneNode(true) as HTMLElement;
     settle(clone);
     clone.style.margin = "0";
+    // An artboard carries its own place on the canvas — position:absolute at
+    // its world coordinates, which for the second board on a page is over a
+    // thousand pixels to the right. Dropped into the comparison's own
+    // wrapper it kept that, and sat entirely outside the window being
+    // rasterised: the canvas side came back blank, and every region was
+    // reported as wholly different from a source that had rendered fine.
+    //
+    // A blank raster is the worst possible failure here, because it looks
+    // exactly like a total conversion failure rather than like a bug in the
+    // measurement.
+    clone.style.position = "relative";
+    clone.style.left = "0";
+    clone.style.top = "0";
+    clone.style.right = "auto";
+    clone.style.bottom = "auto";
     // The clone is detached, so it has no computed styles of its own; the
     // live element it was copied from is walked alongside it to supply them.
     neutralisePhotos(el, clone);
@@ -262,12 +298,30 @@ export function registerCompareTools(): void {
     let differing = 0;
     let total = 0;
 
+    // When a region disagrees and the reason is not obvious, the two rasters
+    // are the evidence. Returning them is the difference between diagnosing
+    // this and guessing at it — which is worth one optional argument.
+    const wantBand = args.debugBandAt === undefined
+      ? null
+      : Math.floor(Number(args.debugBandAt) / BAND_HEIGHT) * BAND_HEIGHT;
+    const debug: Record<string, string> = {};
+
     for (let top = 0; top < common; top += BAND_HEIGHT) {
       const height = Math.min(BAND_HEIGHT, common - top);
+      const sourceBand = band(sourceMarkup, top, height);
+      const canvasBand = band(canvasMarkup, top, height);
+      // The page's own faces go to the source side explicitly: the canvas gets
+      // them with the app stylesheet, and without this the two sides would be
+      // set in different fonts and every word would register as a difference.
       const a = await attempt(
-        "source", band(sourceMarkup, top, height), false, height, sourceCss,
+        "source", sourceBand, false, height, `${adoptedFontCss()}\n${sourceCss}`,
       );
-      const b = await attempt("canvas", band(canvasMarkup, top, height), true, height);
+      const b = await attempt("canvas", canvasBand, true, height);
+
+      if (wantBand === top) {
+        debug.source = await toPng(a);
+        debug.canvas = await toPng(b);
+      }
 
       const w = Math.min(a.width, b.width);
       const h = Math.min(a.height, b.height);
@@ -328,6 +382,7 @@ export function registerCompareTools(): void {
       comparedAtWidth: width,
       /** Worst first, in source coordinates. Empty when nothing stands out. */
       regions: regions.slice(0, 12),
+      ...(debug.source ? { debug } : {}),
       note:
         "Photographs are excluded from both sides; this measures layout, " +
         "type, colour and anything drawn with CSS.",
