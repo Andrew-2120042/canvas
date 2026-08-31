@@ -236,6 +236,22 @@ export function registerCompareTools(): void {
       const tag = el.tagName.toLowerCase();
       if (tag === "style" || tag === "script" || el.hasAttribute("data-pseudo")) continue;
       materialisePseudo(el, fdoc.body);
+
+      // A page is rasterised a band at a time by shifting the markup up
+      // inside a clipped window. Anything fixed ignores that shift — it is
+      // fixed to the viewport, and the viewport is the band — so a sticky
+      // navigation reappeared at the top of every band, while the canvas,
+      // where it is an ordinary node, had it once at the top of the page.
+      // Every band then differed across its full width for a reason that is
+      // entirely an artefact of the measurement.
+      //
+      // Set from the computed style rather than by selector, because a real
+      // page says `position: fixed` in a class, not inline.
+      const view = fdoc.defaultView ?? window;
+      const pos = view.getComputedStyle(el).position;
+      if (pos === "fixed" || pos === "sticky") {
+        el.style.position = pos === "sticky" ? "relative" : "absolute";
+      }
     }
     neutralisePhotos(fdoc.body, fdoc.body);
     const sourceMarkup = new XMLSerializer()

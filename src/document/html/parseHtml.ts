@@ -514,6 +514,8 @@ function typeFor(el: Element, hasTextOnly: boolean): NodeType {
   const tag = el.tagName.toLowerCase();
   if (tag === "svg") return "svg";
   if (tag === "img") return "image";
+  // A field showing its placeholder is a box with words in it.
+  if ((tag === "input" || tag === "textarea") && el.getAttribute("placeholder")) return "text";
   if (hasTextOnly) return "text";
   // A styled box with children is a frame; without children it is a rectangle.
   return el.children.length > 0 ? "frame" : "rect";
@@ -1201,6 +1203,24 @@ function convert(el: Element, unmapped: Set<string>): ParsedNode | null {
   if (type === "image") {
     const src = el.getAttribute("src");
     if (src) props.src = src;
+  }
+
+  // A form field's placeholder is its visible content when the field is
+  // empty, which on a static canvas is always. It lives in an attribute
+  // rather than in the text, so a walker never saw it and every input
+  // converted to an empty box — the newsletter field on a real footer came
+  // through as a dark rounded rectangle with nothing in it.
+  if (tag === "input" || tag === "textarea") {
+    const placeholder = el.getAttribute("placeholder");
+    if (placeholder && !props.text) {
+      props.text = placeholder;
+      // Placeholder text is dimmed by convention, and its own colour lives in
+      // a ::placeholder rule this parser does not read. Half the field's
+      // colour is close, and much closer than the field's full colour.
+      const colour = style.get("color");
+      if (colour) props.fill = colour;
+      props.opacity = (props.opacity ?? 1) * 0.55;
+    }
   }
 
   // Everything the field parsers refused, given to the browser verbatim.
