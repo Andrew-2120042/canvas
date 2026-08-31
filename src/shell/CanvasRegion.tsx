@@ -8,6 +8,7 @@ import { useKeyboard } from "../canvas/useKeyboard";
 import { SceneNodeView } from "../canvas/SceneNodeView";
 import { SelectionOverlay } from "../canvas/SelectionOverlay";
 import { ArrivalOutlines } from "../canvas/ArrivalOutlines";
+import { StreamPreview } from "../canvas/StreamPreview";
 import { CommentLayer, type PendingComment } from "../canvas/CommentLayer";
 import { usePenTool } from "../canvas/usePenTool";
 import { PenPreview } from "../canvas/PenPreview";
@@ -200,6 +201,8 @@ export function CanvasRegion() {
         {page.children.map((id: string) => (
           <SceneNodeView key={id} id={id} />
         ))}
+
+        <StreamPreview />
 
         {marquee && (
           <div

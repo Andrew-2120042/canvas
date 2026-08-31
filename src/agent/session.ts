@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { partialString } from "./partialJson";
+import { useStreamPreview } from "../state/streamPreview";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { parsePrompt, type Prompt } from "./prompts";
@@ -114,6 +116,19 @@ export const useAgent = create<AgentStore>((set, get) => {
    * partial deltas. Only what a person would want to see is rendered, and
    * anything unrecognised is ignored rather than shown as noise.
    */
+  /**
+   * The write_html call currently being composed, if any.
+   *
+   * Only one at a time: a model writes one tool call before starting the
+   * next, and holding several previews would mean guessing which frame the
+   * user is watching.
+   */
+  let streamingTool: { index: number; json: string } | null = null;
+
+  /** Whether a tool call is the one that writes a design. */
+  const isWriteHtml = (name: unknown): boolean =>
+    typeof name === "string" && /(^|__)write_html$/.test(name);
+
   const apply = (event: Record<string, any>) => {
     const type = event.type as string;
 
@@ -126,10 +141,30 @@ export const useAgent = create<AgentStore>((set, get) => {
         return;
       }
 
+      if (ev.type === "content_block_stop") {
+        // The call is complete; the real write_html takes over from here and
+        // the preview must be gone before its nodes arrive, or the design
+        // would briefly appear twice.
+        if (streamingTool && ev.index === streamingTool.index) {
+          streamingTool = null;
+          useStreamPreview.getState().end();
+        }
+        return;
+      }
+
       if (ev.type === "content_block_start") {
         const block = ev.content_block ?? {};
-        // Tool calls are handled from the complete message: their arguments
-        // arrive as partial JSON, which is not worth rendering half-parsed.
+        // A design being written is worth rendering half-parsed, which is
+        // the one exception to the rule below. The markup arrives token by
+        // token over several seconds; showing it as it lands is the whole
+        // difference between watching a build and waiting for one.
+        if (block.type === "tool_use" && isWriteHtml(block.name)) {
+          streamingTool = { index: ev.index, json: "" };
+          return;
+        }
+        // Every other tool call is handled from the complete message: its
+        // arguments are partial JSON, and half of an argument is not worth
+        // showing.
         if (block.type !== "text" && block.type !== "thinking") return;
         const id = nextId();
         streamed.set(ev.index, id);
@@ -144,6 +179,19 @@ export const useAgent = create<AgentStore>((set, get) => {
       }
 
       if (ev.type === "content_block_delta") {
+        // The markup as far as it has been written.
+        if (streamingTool && ev.index === streamingTool.index) {
+          const piece: string = ev.delta?.partial_json ?? "";
+          if (!piece) return;
+          streamingTool.json += piece;
+          const html = partialString(streamingTool.json, "html");
+          if (html === null) return;
+          // The target is written before the markup, so by the time there is
+          // anything to draw there is somewhere to draw it.
+          const target = partialString(streamingTool.json, "targetNodeId");
+          useStreamPreview.getState().feed(target, html);
+          return;
+        }
         const id = streamed.get(ev.index);
         if (!id) return;
         const delta = ev.delta ?? {};
@@ -175,6 +223,16 @@ export const useAgent = create<AgentStore>((set, get) => {
         },
       });
       return;
+    }
+
+    if (type === "user" || type === "result") {
+      // A tool result means the call landed: whatever it did, the preview's
+      // job is over. content_block_stop normally gets here first; this is the
+      // path for a call that fails or is interrupted before it stops cleanly.
+      if (streamingTool) {
+        streamingTool = null;
+        useStreamPreview.getState().end();
+      }
     }
 
     if (type === "assistant") {
@@ -352,7 +410,12 @@ export const useAgent = create<AgentStore>((set, get) => {
           if (e.payload.id === AGENT_SESSION) apply(e.payload.event);
         });
         await listen<{ id: string }>("agent:closed", (e) => {
-          if (e.payload.id === AGENT_SESSION) set({ running: false, busy: false });
+          if (e.payload.id !== AGENT_SESSION) return;
+          // A preview belongs to a call in flight. If the agent dies mid-call
+          // there is no call any more, and leaving the markup on the canvas
+          // would show a design that is never going to exist.
+          useStreamPreview.getState().end();
+          set({ running: false, busy: false });
         });
       }
       // Mint an id the first time one is needed, then keep it.

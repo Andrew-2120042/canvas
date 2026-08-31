@@ -1652,3 +1652,28 @@ body {
   display: block;
   pointer-events: none;
 }
+
+/*
+ * The design being written, before it is parsed.
+ *
+ * Inert in every sense: no pointer events, no selection, and out of the
+ * layout so it cannot push the page around while it grows. It sits over its
+ * frame and is replaced by real nodes the moment the call completes.
+ *
+ * The border is the same pulse a node gets while the agent works on it, so a
+ * streaming frame reads as the same state as a finished one being edited
+ * rather than as a different kind of thing.
+ */
+.stream-preview {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  user-select: none;
+  animation: build-pulse 1.4s ease-in-out infinite;
+  outline: 2px solid rgba(43, 127, 255, 0.85);
+  outline-offset: 2px;
+}
+
+.stream-preview * {
+  pointer-events: none !important;
+}
