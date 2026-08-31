@@ -471,6 +471,49 @@ function resolveAgainst(html: string, base: string): string {
 }
 
 /**
+ * Keep the resolver from downloading a page's photographs.
+ *
+ * The resolver mounts a page only to ask the browser what its styles compute
+ * to. It never needs a single pixel of a photograph to answer that: a CSS
+ * background does not affect layout, so whether the file is a four-megabyte
+ * photograph or nothing at all, every box lands in exactly the same place.
+ *
+ * Left alone it downloads and decodes all of them anyway, and the canvas then
+ * loads the same files again to render them. On a page carrying fourteen
+ * megabytes of photographs that was enough to take the webview down — it
+ * crashed, reloaded, restored the last save, and the import appeared to
+ * vanish. Which reads as the import silently failing rather than as running
+ * out of memory.
+ *
+ * So each url() is swapped for an inert token before mounting and put back
+ * afterwards. The computed styles come out identical, because the only thing
+ * that changed is a string the layout never consults.
+ *
+ * `<img>` is deliberately untouched: an image element's intrinsic size does
+ * decide its box, so it has to load.
+ */
+function deferImageLoads(html: string): { html: string; urls: string[] } {
+  const urls: string[] = [];
+  const out = html.replace(
+    /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,
+    (whole, _q, url: string) => {
+      if (/^data:/i.test(url)) return whole;
+      urls.push(url);
+      return `url("about:blank#cssimg${urls.length - 1}")`;
+    },
+  );
+  return { html: out, urls };
+}
+
+/** Put the real files back into the styles that were read out. */
+function restoreImageLoads(html: string, urls: string[]): string {
+  return html.replace(
+    /about:blank#cssimg(\d+)/g,
+    (whole, n: string) => urls[Number(n)] ?? whole,
+  );
+}
+
+/**
  * Mount `html`, let the browser resolve its stylesheet, and return the same
  * markup with every rule written inline and the stylesheet removed.
  *
@@ -486,7 +529,9 @@ export async function inlineStylesheet(
   const { doc } = await getHost(width);
   const view = doc.defaultView ?? window;
   const root = doc.body;
-  root.innerHTML = basePath ? resolveAgainst(html, basePath) : html;
+  const withPaths = basePath ? resolveAgainst(html, basePath) : html;
+  const deferred = deferImageLoads(withPaths);
+  root.innerHTML = deferred.html;
 
   // The page's own faces, registered and loaded before anything is measured.
   // Awaited rather than fired off: every width and height read below is a
@@ -545,7 +590,7 @@ export async function inlineStylesheet(
     tag.remove();
   }
 
-  const out = root.innerHTML;
+  const out = restoreImageLoads(root.innerHTML, deferred.urls);
   root.innerHTML = "";
   return { html: out, fonts };
 }
